@@ -1,0 +1,93 @@
+/// Emergencia registrada por un municipio afectado.
+///
+/// Es la raiz del proceso: de ella cuelgan los lotes de necesidades y, a
+/// traves de ellos, las ofertas. Su `estado` es el reflejo local del avance
+/// de la instancia del proceso en Bonita.
+model Emergencia {
+  id Int @id @default(autoincrement())
+
+  tipo         TipoDesastre
+  gravedad     NivelGravedad
+  zonaAfectada String        @map("zona_afectada") @db.VarChar(200)
+  descripcion  String        @db.Text
+
+  /// Cuantas personas afectadas estima el municipio. Alimenta las metricas
+  /// del tablero de indicadores.
+  personasAfectadas Int? @map("personas_afectadas")
+
+  /// Cuando ocurrio el desastre, que no es lo mismo que cuando se cargo en
+  /// el sistema. La diferencia entre ambas es un indicador en si misma.
+  fechaOcurrencia DateTime @map("fecha_ocurrencia")
+
+  estado EstadoEmergencia @default(REGISTRADA)
+
+  /// Cierre de la ventana de recepcion de ofertas. La fija el Centro
+  /// Coordinador al publicar la convocatoria, y es el valor que despues se le
+  /// pasa al temporizador de Bonita.
+  fechaCierreConvocatoria DateTime? @map("fecha_cierre_convocatoria")
+
+  /// Obligatorio al cancelar: una emergencia cancelada sin explicacion es
+  /// inauditable.
+  motivoCancelacion String? @map("motivo_cancelacion") @db.VarChar(500)
+
+  /// Identificador de la instancia del proceso en Bonita. Es el hilo que ata
+  /// esta base con el motor de BPM. Nullable porque la emergencia se guarda
+  /// aunque la llamada a Bonita falle: perder el registro de un desastre
+  /// porque el motor estaba caido seria mucho peor que quedar sin caso.
+  bonitaCaseId String? @map("bonita_case_id") @db.VarChar(50)
+
+  /// El municipio afectado. Se toma de la organizacion del usuario que la
+  /// registra, nunca del body del request.
+  municipioId Int          @map("municipio_id")
+  municipio   Organizacion @relation(fields: [municipioId], references: [id])
+
+  /// Quien la cargo. Se conserva aunque despues se de de baja al usuario,
+  /// por eso usuarios usa baja logica.
+  registradaPorId Int     @map("registrada_por_id")
+  registradaPor   Usuario @relation(fields: [registradaPorId], references: [id])
+
+  lotes   Lote[]
+  ofertas Oferta[]
+
+  fechaCreacion      DateTime @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime @updatedAt @map("fecha_actualizacion")
+
+  @@index([estado])
+  @@index([municipioId])
+  @@index([gravedad])
+  @@map("emergencias")
+}
+
+enum TipoDesastre {
+  INUNDACION
+  INCENDIO
+  TERREMOTO
+  DESLIZAMIENTO
+  TORMENTA_SEVERA
+  OTRO
+}
+
+enum NivelGravedad {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+/// Ciclo de vida de la emergencia, espejo del flujo de la consigna.
+enum EstadoEmergencia {
+  /// El municipio la cargo. El Centro Coordinador la revisa y desglosa en lotes.
+  REGISTRADA
+  /// Convocatoria publicada a toda la red. La ventana de ofertas esta abierta.
+  CONVOCATORIA_ABIERTA
+  /// Vencio el temporizador. Se validan las ofertas contra el Sistema Nacional.
+  CONVOCATORIA_CERRADA
+  /// El municipio elige entre las ofertas validadas.
+  EN_ADJUDICACION
+  /// Adjudicada. Despliegue en terreno, monitoreado por el Coordinador.
+  EN_EJECUCION
+  /// Cierre operativo: recursos liberados a nivel nacional.
+  FINALIZADA
+  /// Terminada sin llegar a ejecutarse.
+  CANCELADA
+}

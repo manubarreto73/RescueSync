@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.build.json",
+  "watchOptions": {
+    "watchFile": "dynamicPriorityPolling",
+    "watchDirectory": "dynamicPriorityPolling",
+    "fallbackPolling": "dynamicPriority",
+    "synchronousWatchDirectory": true
+  }
+}

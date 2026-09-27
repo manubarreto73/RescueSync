@@ -1,0 +1,29 @@
+# dependencias
+node_modules/
+
+# build
+dist/
+build/
+*.tsbuildinfo
+
+# entorno
+.env
+.env.local
+.env.*.local
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# tests
+coverage/
+
+# editores
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# docker
+docker-data/

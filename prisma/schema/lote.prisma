@@ -1,0 +1,41 @@
+/// Lote de Necesidades: una necesidad concreta y cuantificada de una
+/// emergencia, del estilo "5 paramedicos" o "1000 raciones de alimento".
+///
+/// Es la unidad sobre la que ofertan las ONGs. Sin lotes cargados no hay
+/// convocatoria posible: la red no sabria sobre que ofertar.
+model Lote {
+  id Int @id @default(autoincrement())
+
+  emergenciaId Int        @map("emergencia_id")
+  emergencia   Emergencia @relation(fields: [emergenciaId], references: [id], onDelete: Cascade)
+
+  categoria   CategoriaRecurso
+  descripcion String           @db.VarChar(200)
+
+  cantidadRequerida Int    @map("cantidad_requerida")
+  /// Unidad de medida: personas, raciones, litros, unidades, metros cuadrados.
+  /// Texto libre y no enum porque cada categoria se mide distinto y la lista
+  /// completa no se puede anticipar.
+  unidad            String @db.VarChar(30)
+
+  lineasDeOferta OfertaLinea[]
+
+  fechaCreacion      DateTime @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime @updatedAt @map("fecha_actualizacion")
+
+  @@index([emergenciaId])
+  @@map("lotes")
+}
+
+/// Que clase de recurso pide el lote. Sirve para que las ONGs filtren la
+/// convocatoria por lo que efectivamente pueden aportar.
+enum CategoriaRecurso {
+  PERSONAL
+  ALIMENTOS
+  AGUA_POTABLE
+  MEDICAMENTOS
+  ABRIGO_Y_REFUGIO
+  EQUIPAMIENTO
+  TRANSPORTE_Y_LOGISTICA
+  OTRO
+}

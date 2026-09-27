@@ -1,0 +1,98 @@
+# Pensado para correr con Docker Engine nativo dentro de WSL2 (Ubuntu), sin
+# Docker Desktop, con el codigo del proyecto en el filesystem de Windows.
+#
+# IMPORTANTE: estos comandos se ejecutan desde una terminal de Ubuntu, parado
+# en /mnt/c/..., no desde PowerShell. Sin Docker Desktop no hay cliente docker
+# del lado de Windows.
+#
+# Ver la seccion "Como correrlo" del README.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rescuesync-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rescuesync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rescuesync}
+      POSTGRES_DB: ${POSTGRES_DB:-rescuesync}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      # Volumen nombrado, no bind mount: los datos viven en el sistema de
+      # archivos de Linux. Un bind mount contra /mnt/c corrompe Postgres.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-rescuesync} -d ${POSTGRES_DB:-rescuesync}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rescuesync-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: rescuesync-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rescuesync-net
+
+  api:
+    build:
+      context: .
+      target: development
+    container_name: rescuesync-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Dentro de la red de Docker los hosts son los nombres de servicio, no
+      # "localhost" (localhost dentro del contenedor es el contenedor mismo).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rescuesync}:${POSTGRES_PASSWORD:-rescuesync}@postgres:5432/${POSTGRES_DB:-rescuesync}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    # Aplica las migraciones pendientes y recien despues arranca la app.
+    # Es el equivalente a que Flyway corra en el startup de Spring.
+    #
+    # -p tsconfig.docker.json activa el watcher por polling. Hace falta porque
+    # el codigo esta montado desde /mnt/c: los eventos inotify no cruzan el
+    # puente entre el filesystem de Windows y el de Linux, asi que el watcher
+    # por defecto nunca se entera de que guardaste un archivo.
+    command: sh -c "npx prisma migrate deploy && npm run start:dev -- -p tsconfig.docker.json"
+    ports:
+      - '${PORT:-3000}:3000'
+      - '9229:9229' # debugger de Node
+    volumes:
+      # Bind mount del codigo para el hot-reload. Al vivir el proyecto en
+      # /mnt/c, estas rutas cruzan el puente 9p: anda, pero es lento y sin
+      # eventos inotify (de ahi el polling del watcher, ver command).
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      # Volumen anonimo para que node_modules del contenedor (con el cliente
+      # de Prisma compilado para linux-musl) no sea pisado por el del host.
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rescuesync-net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  rescuesync-net:
+    driver: bridge

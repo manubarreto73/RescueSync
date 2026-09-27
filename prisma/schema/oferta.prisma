@@ -1,0 +1,148 @@
+/// Oferta de Ayuda que una o varias ONGs presentan ante una convocatoria.
+///
+/// No pertenece a un usuario ni a una sola organizacion: pertenece a un
+/// conjunto de participantes. Esa es la diferencia entre una oferta simple y
+/// un consorcio, y es lo que permite calcular el "porcentaje de resolucion
+/// mediante consorcios" que pide el tablero de indicadores.
+model Oferta {
+  id Int @id @default(autoincrement())
+
+  emergenciaId Int        @map("emergencia_id")
+  emergencia   Emergencia @relation(fields: [emergenciaId], references: [id], onDelete: Cascade)
+
+  estado EstadoOferta @default(BORRADOR)
+
+  /// Se incrementa con cada modificacion dentro de la ventana. El detalle de
+  /// cada version queda en OfertaVersion.
+  version Int @default(1)
+
+  observaciones String? @db.VarChar(1000)
+
+  /// La organizacion que encabeza el consorcio y responde por el conjunto.
+  /// En una oferta individual es la unica participante.
+  organizacionLiderId Int          @map("organizacion_lider_id")
+  organizacionLider   Organizacion @relation(fields: [organizacionLiderId], references: [id])
+
+  presentadaPorId Int     @map("presentada_por_id")
+  presentadaPor   Usuario @relation(fields: [presentadaPorId], references: [id])
+
+  fechaPresentacion    DateTime? @map("fecha_presentacion")
+  fechaAdjudicacion    DateTime? @map("fecha_adjudicacion")
+  motivoNoAdjudicacion String?   @map("motivo_no_adjudicacion") @db.VarChar(500)
+
+  participantes OfertaParticipante[]
+  lineas        OfertaLinea[]
+  versiones     OfertaVersion[]
+
+  fechaCreacion      DateTime @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime @updatedAt @map("fecha_actualizacion")
+
+  @@index([emergenciaId])
+  @@index([estado])
+  @@index([organizacionLiderId])
+  @@map("ofertas")
+}
+
+/// Una organizacion dentro de un consorcio.
+///
+/// Existe como tabla propia y no se deduce de las lineas por dos motivos: el
+/// cierre del eslabon 7 se marca por ONG ("las ONGs marcan sus actividades
+/// como finalizadas", en plural), y una ONG puede sumarse al consorcio antes
+/// de definir con que aporta.
+model OfertaParticipante {
+  id Int @id @default(autoincrement())
+
+  ofertaId Int    @map("oferta_id")
+  oferta   Oferta @relation(fields: [ofertaId], references: [id], onDelete: Cascade)
+
+  organizacionId Int          @map("organizacion_id")
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+
+  esLider Boolean @default(false) @map("es_lider")
+
+  /// Cierre bilateral del eslabon 7: cada ONG da por terminada su parte, y el
+  /// proyecto se cierra cuando lo hicieron todas.
+  finalizado        Boolean   @default(false)
+  fechaFinalizacion DateTime? @map("fecha_finalizacion")
+
+  @@unique([ofertaId, organizacionId])
+  @@map("oferta_participantes")
+}
+
+/// Que aporta cada participante para cada lote.
+///
+/// Es el nivel donde vive la oferta parcial: `cantidad` puede ser menor a la
+/// requerida por el lote, y entre varias lineas de varias ONGs se completa.
+model OfertaLinea {
+  id Int @id @default(autoincrement())
+
+  ofertaId Int    @map("oferta_id")
+  oferta   Oferta @relation(fields: [ofertaId], references: [id], onDelete: Cascade)
+
+  loteId Int  @map("lote_id")
+  lote   Lote @relation(fields: [loteId], references: [id], onDelete: Cascade)
+
+  /// Cual de los participantes del consorcio aporta esto. El compromiso de
+  /// recursos ante el Sistema Nacional se registra por ONG, no por oferta.
+  organizacionId Int          @map("organizacion_id")
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+
+  cantidad Int
+
+  /// Lo asigna la validacion externa segun el nivel de competencia que
+  /// devuelva el Sistema Nacional. La consigna es explicita en que no hay
+  /// rechazo binario: una ONG con menor habilitacion no queda afuera, entra
+  /// como apoyo secundario.
+  caracter CaracterOferta @default(PRINCIPAL)
+
+  /// Detalle devuelto por el Sistema Nacional, para trazabilidad.
+  perfilCompetencia String? @map("perfil_competencia") @db.VarChar(200)
+
+  @@unique([ofertaId, loteId, organizacionId])
+  @@index([loteId])
+  @@map("oferta_lineas")
+}
+
+/// Historial de modificaciones dentro de la ventana de convocatoria.
+///
+/// La consigna pide "mantener trazabilidad en el backend" de las ediciones de
+/// ofertas. Se guarda el detalle completo como JSON en vez de un diff: es mas
+/// simple de leer en una auditoria y el volumen es despreciable.
+model OfertaVersion {
+  id Int @id @default(autoincrement())
+
+  ofertaId Int    @map("oferta_id")
+  oferta   Oferta @relation(fields: [ofertaId], references: [id], onDelete: Cascade)
+
+  version  Int
+  snapshot Json
+
+  modificadaPorId Int      @map("modificada_por_id")
+  modificadaPor   Usuario  @relation(fields: [modificadaPorId], references: [id])
+  fechaCambio     DateTime @default(now()) @map("fecha_cambio")
+
+  @@unique([ofertaId, version])
+  @@map("oferta_versiones")
+}
+
+enum EstadoOferta {
+  /// La ONG la esta armando. No cuenta para la convocatoria.
+  BORRADOR
+  /// Enviada dentro de la ventana. Editable mientras la ventana siga abierta.
+  PRESENTADA
+  /// Evaluada contra el Sistema Nacional: sus lineas ya tienen caracter.
+  VALIDADA
+  /// Elegida por el municipio.
+  ADJUDICADA
+  /// No elegida. No es un rechazo a la ONG, solo a esta propuesta.
+  NO_ADJUDICADA
+  /// Todas las ONGs del consorcio dieron por terminada su parte.
+  FINALIZADA
+  /// La ONG la dio de baja dentro de la ventana.
+  RETIRADA
+}
+
+enum CaracterOferta {
+  PRINCIPAL
+  APOYO_SECUNDARIO
+}

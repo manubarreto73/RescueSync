@@ -1,0 +1,16 @@
+// Punto de entrada del schema. Aca van SOLO datasource y generator:
+// cada dominio define sus modelos en su propio archivo .prisma de esta carpeta
+// (Prisma los concatena), para que 5 personas no editen el mismo archivo.
+
+generator client {
+  provider = "prisma-client-js"
+
+  // native  -> el binario del SO donde se corre `prisma generate` (tu WSL/Windows)
+  // musl    -> el de la imagen node:alpine de Docker
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

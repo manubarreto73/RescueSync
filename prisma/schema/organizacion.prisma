@@ -1,0 +1,56 @@
+/// Entidad de la red de RescueSync: municipios afectados, ONGs, organismos de
+/// rescate, entes gubernamentales y el propio Centro Coordinador.
+///
+/// Es la pieza que faltaba para poder acotar el acceso por pertenencia: un
+/// municipio tiene que ver sus emergencias y no las de todos, y una ONG sus
+/// ofertas y no las de la competencia. Eso no se puede expresar con el rol,
+/// porque no es una pregunta sobre que perfil tenes sino sobre a que filas
+/// tenes derecho.
+///
+/// Tambien es el sujeto de los consorcios: una oferta conjunta pertenece a
+/// varias organizaciones, nunca a un usuario.
+model Organizacion {
+  id     Int              @id @default(autoincrement())
+  nombre String           @unique @db.VarChar(150)
+  tipo   TipoOrganizacion
+
+  /// CUIT sin guiones. Opcional porque no toda organizacion de la red lo
+  /// tiene cargado al darse de alta, pero unico cuando esta.
+  cuit String? @unique @db.VarChar(13)
+
+  /// Identificador de esta organizacion en el Sistema Nacional (la API
+  /// externa). Lo necesita el compromiso y la liberacion de recursos, que se
+  /// registran por ONG y no por oferta.
+  codigoNacional String? @unique @map("codigo_nacional") @db.VarChar(50)
+
+  emailContacto    String? @map("email_contacto") @db.VarChar(120)
+  telefonoContacto String? @map("telefono_contacto") @db.VarChar(30)
+  localidad        String? @db.VarChar(120)
+  provincia        String? @db.VarChar(120)
+
+  /// Baja logica, por el mismo motivo que en usuarios: las emergencias y
+  /// ofertas historicas tienen que seguir siendo auditables.
+  activo Boolean @default(true)
+
+  fechaCreacion      DateTime @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime @updatedAt @map("fecha_actualizacion")
+
+  usuarios                 Usuario[]
+  emergencias              Emergencia[]
+  ofertasLideradas         Oferta[]
+  participacionesEnOfertas OfertaParticipante[]
+  lineasDeOferta           OfertaLinea[]
+
+  @@index([tipo])
+  @@index([activo])
+  @@map("organizaciones")
+}
+
+/// Los actores que nombra la consigna.
+enum TipoOrganizacion {
+  MUNICIPIO
+  ONG
+  ORGANISMO_RESCATE
+  ENTE_GUBERNAMENTAL
+  CENTRO_COORDINADOR
+}

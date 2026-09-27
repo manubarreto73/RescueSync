@@ -1,0 +1,2256 @@
+{
+  "info": {
+    "name": "RescueSync API",
+    "description": "Backend de la aplicacion web de RescueSync (Sistemas Distribuidos 2026).\n\nCubre el dominio de usuarios y la autenticacion JWT.\n\n## Como usarla\n\n1. Levantar el backend: `docker compose up`\n2. Cargar los usuarios de prueba: `docker compose exec api npm run db:seed`\n3. Ejecutar **Auth > Login**. El script de tests guarda automaticamente `accessToken`, `refreshToken` y `usuarioId` en las variables de la coleccion, asi que el resto de los requests ya salen autenticados.\n\n## Usuarios de prueba (del seed)\n\n| Email | Rol | Password |\n|---|---|---|\n| municipio@rescuesync.ar | OPERADOR_MUNICIPAL | Rescue2026! |\n| coordinador@rescuesync.ar | CENTRO_COORDINADOR | Rescue2026! |\n| ong@rescuesync.ar | REPRESENTANTE_ONG | Rescue2026! |\n| auditor@rescuesync.ar | AUDITOR | Rescue2026! |\n\nLa gestion de usuarios (alta, edicion, baja) requiere el rol CENTRO_COORDINADOR.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "usuarioId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailDemo",
+      "value": "coordinador@rescuesync.ar",
+      "type": "string"
+    },
+    {
+      "key": "passwordDemo",
+      "value": "Rescue2026!",
+      "type": "string"
+    },
+    {
+      "key": "usuarioCreadoId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tokenAuditor",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "organizacionCreadaId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emergenciaId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "loteId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ofertaId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lineaId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Login, rotacion de refresh token, logout y perfil del usuario autenticado.",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "  pm.collectionVariables.set('usuarioId', body.usuario.id);",
+                  "",
+                  "  pm.test('devuelve el par de tokens', () => {",
+                  "    pm.expect(body.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.refreshToken).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.tokenType).to.eql('Bearer');",
+                  "  });",
+                  "",
+                  "  pm.test('no filtra el hash de la contrasena', () => {",
+                  "    pm.expect(body.usuario).to.not.have.property('password');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{emailDemo}}\",\n  \"password\": \"{{passwordDemo}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Devuelve accessToken (JWT, 15 min) y refreshToken (opaco, 7 dias).\n\nRate limit propio: 3 intentos cada 10s y 5 por minuto. Ademas, 5 fallos consecutivos desde la misma IP la bloquean 30 minutos (contador en Redis)."
+          }
+        },
+        {
+          "name": "Login - credenciales invalidas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('avisa cuantos intentos quedan', () => {",
+                  "  pm.expect(pm.response.json().message).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{emailDemo}}\",\n  \"password\": \"PasswordIncorrecta1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Caso de error.\n\nCuidado: correrlo 5 veces seguidas bloquea la IP por 30 minutos, y a partir de ahi el login\ndevuelve 429 aunque las credenciales sean correctas.\n\nPara destrabarla, desde una terminal de Ubuntu:\n\n```\ndocker exec rescuesync-redis sh -c \"redis-cli --scan --pattern 'blocked_ip:*' | xargs -r redis-cli DEL\"\n```"
+          }
+        },
+        {
+          "name": "Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('es el usuario logueado', () => {",
+                  "  pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('usuarioId')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Datos del usuario dueno del access token. Sirve para que el front sepa que rol pintar."
+          }
+        },
+        {
+          "name": "Refresh token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const anterior = pm.collectionVariables.get('refreshToken');",
+                  "",
+                  "  pm.test('rota el refresh token', () => {",
+                  "    pm.expect(body.refreshToken).to.not.eql(anterior);",
+                  "  });",
+                  "",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "El refresh token es de UN SOLO USO: al canjearlo se borra de Redis y se emite uno nuevo. Ejecutar este request dos veces con el mismo token da 401 la segunda vez."
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.collectionVariables.set('accessToken', '');",
+                  "pm.collectionVariables.set('refreshToken', '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Manda el access token a la blacklist de Redis por el tiempo que le quedaba de vida, y borra el refresh token. A partir de aca el mismo access token da 401 aunque todavia no haya expirado."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organizaciones",
+      "description": "Municipios, ONGs, organismos de rescate y entes gubernamentales de la red.\n\nEs la entidad que permite acotar el acceso por pertenencia, y el sujeto de los\nconsorcios: una oferta conjunta pertenece a varias organizaciones, nunca a un usuario.",
+      "item": [
+        {
+          "name": "Crear organizacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('organizacionCreadaId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Manos Unidas\",\n  \"tipo\": \"ONG\",\n  \"cuit\": \"30999999999\",\n  \"codigoNacional\": \"ONG-9999\",\n  \"emailContacto\": \"contacto@manosunidas.org\",\n  \"telefonoContacto\": \"+54 9 351 555-1000\",\n  \"localidad\": \"Alta Gracia\",\n  \"provincia\": \"Cordoba\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones"
+              ]
+            },
+            "description": "Requiere CENTRO_COORDINADOR.\n\nEl CUIT va sin guiones, 11 digitos. El codigoNacional es el identificador de esta\norganizacion en el Sistema Nacional: lo necesita el compromiso y la liberacion de\nrecursos, que se registran por ONG y no por oferta.\n\nnombre, cuit y codigoNacional son unicos."
+          }
+        },
+        {
+          "name": "Listar organizaciones",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('viene paginado', () => {",
+                  "  pm.expect(pm.response.json()).to.have.property('totalElements');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "tipo",
+                  "value": "ONG",
+                  "description": "MUNICIPIO | ONG | ORGANISMO_RESCATE | ENTE_GUBERNAMENTAL | CENTRO_COORDINADOR",
+                  "disabled": true
+                },
+                {
+                  "key": "busqueda",
+                  "value": "",
+                  "description": "Texto libre sobre nombre, localidad y CUIT",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Abierto a CENTRO_COORDINADOR, AUDITOR y REPRESENTANTE_ONG.\n\nLa ONG entra porque la consigna pide que se asocien en consorcios \"mediante la\ninterfaz\", y para eso tienen que poder encontrar a las otras.\n\nEl OPERADOR_MUNICIPAL recibe 403: la convocatoria la difunde el Centro Coordinador\na toda la red, el municipio no elige a quien invitar."
+          }
+        },
+        {
+          "name": "Mi organizacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones/mia",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones",
+                "mia"
+              ]
+            },
+            "description": "La organizacion del usuario del token.\n\nDevuelve 403 para CENTRO_COORDINADOR y AUDITOR, que son transversales a la red y no\npertenecen a ninguna. Es 403 y no 404: el recurso no falta, es el usuario el que no\ntiene una organizacion sobre la cual operar."
+          }
+        },
+        {
+          "name": "Editar mi organizacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emailContacto\": \"nuevo@cruzsolidaria.org\",\n  \"telefonoContacto\": \"+54 9 351 555-2000\",\n  \"localidad\": \"Rio Cuarto\",\n  \"provincia\": \"Cordoba\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones/mia",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones",
+                "mia"
+              ]
+            },
+            "description": "El referente actualiza los datos de contacto de SU organizacion.\n\nSolo eso: nombre, tipo, cuit y codigoNacional no estan en el DTO. El codigo nacional\nes la clave con la que el Sistema Nacional bloquea y libera recursos; si una ONG\npudiera cambiarlo sola, podria apropiarse de los recursos comprometidos por otra.\n\nLoguearse como ong@rescuesync.ar para probarlo."
+          }
+        },
+        {
+          "name": "Actualizar organizacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Manos Unidas Regional\",\n  \"cuit\": \"30999999999\",\n  \"codigoNacional\": \"ONG-9999\",\n  \"emailContacto\": \"contacto@manosunidas.org\",\n  \"telefonoContacto\": \"+54 9 351 555-1001\",\n  \"localidad\": \"Alta Gracia\",\n  \"provincia\": \"Cordoba\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones/{{organizacionCreadaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones",
+                "{{organizacionCreadaId}}"
+              ]
+            },
+            "description": "Edicion administrativa. El campo `tipo` no se puede cambiar: dejaria a un\nREPRESENTANTE_ONG colgando de un MUNICIPIO y rompería la coherencia entre rol y\npertenencia. Si de verdad hace falta, es una baja y un alta."
+          }
+        },
+        {
+          "name": "Baja bloqueada por usuarios activos (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('explica el motivo', () => {",
+                  "  pm.expect(pm.response.json().message).to.include('usuario(s) activo(s)');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones/2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones",
+                "2"
+              ]
+            },
+            "description": "La organizacion 2 del seed (Cruz Solidaria) tiene un usuario activo.\n\nDejar usuarios colgando de una organizacion inactiva los convierte en gente que\npuede entrar al sistema pero no operar sobre nada, que es peor que no poder entrar.\nHay que dar de baja a las personas primero."
+          }
+        },
+        {
+          "name": "Dar de baja organizacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizaciones/{{organizacionCreadaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizaciones",
+                "{{organizacionCreadaId}}"
+              ]
+            },
+            "description": "Baja logica. Funciona porque la organizacion recien creada todavia no tiene usuarios."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Usuarios",
+      "description": "ABM de usuarios. Alta, edicion y baja requieren rol CENTRO_COORDINADOR; el listado lo pueden ver tambien los AUDITOR.",
+      "item": [
+        {
+          "name": "Crear usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('usuarioCreadoId', body.id);",
+                  "",
+                  "  pm.test('nace activo y sin exponer la contrasena', () => {",
+                  "    pm.expect(body.activo).to.be.true;",
+                  "    pm.expect(body).to.not.have.property('password');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nueva.ong@rescuesync.ar\",\n  \"password\": \"Rescue2026!\",\n  \"nombreCompleto\": \"Manos Unidas - Pedro Ruiz\",\n  \"telefono\": \"+54 9 351 555-0100\",\n  \"rol\": \"REPRESENTANTE_ONG\",\n  \"organizacionId\": 3\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "description": "Requiere CENTRO_COORDINADOR.\n\norganizacionId tiene que ser coherente con el rol:\n  OPERADOR_MUNICIPAL  -> obligatoria, de tipo MUNICIPIO\n  REPRESENTANTE_ONG   -> obligatoria, de tipo ONG u ORGANISMO_RESCATE\n  CENTRO_COORDINADOR  -> ninguna, es transversal a la red\n  AUDITOR             -> ninguna, es transversal a la red\n\nLa 3 del seed es Bomberos Voluntarios de Cosquin (ORGANISMO_RESCATE).\n\nLa contrasena debe tener entre 8 y 72 caracteres, con mayuscula, minuscula y numero."
+          }
+        },
+        {
+          "name": "Listar usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('viene paginado', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.all.keys('content', 'page', 'size', 'totalElements', 'totalPages');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "description": "Base 0"
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "description": "Maximo 100"
+                },
+                {
+                  "key": "busqueda",
+                  "value": "",
+                  "description": "Texto libre sobre nombre y email",
+                  "disabled": true
+                },
+                {
+                  "key": "rol",
+                  "value": "REPRESENTANTE_ONG",
+                  "description": "OPERADOR_MUNICIPAL | CENTRO_COORDINADOR | REPRESENTANTE_ONG | AUDITOR",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Devuelve solo usuarios activos. Roles habilitados: CENTRO_COORDINADOR y AUDITOR."
+          }
+        },
+        {
+          "name": "Obtener usuario por id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/{{usuarioId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": "404 si el id no existe o si el usuario fue dado de baja."
+          }
+        },
+        {
+          "name": "Actualizar usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nueva.ong@rescuesync.ar\",\n  \"nombreCompleto\": \"Manos Unidas - Pedro Ruiz (actualizado)\",\n  \"telefono\": \"+54 9 351 555-0101\",\n  \"rol\": \"REPRESENTANTE_ONG\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/{{usuarioCreadoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{usuarioCreadoId}}"
+              ]
+            },
+            "description": "Se mandan TODOS los campos editables, no un subconjunto. La contrasena no se toca aca: tiene su propio endpoint."
+          }
+        },
+        {
+          "name": "Cambiar mi contrasena",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.test('los tokens viejos siguen sirviendo hasta que expiren', () => {",
+                  "  pm.expect(pm.collectionVariables.get('accessToken')).to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passwordActual\": \"{{passwordDemo}}\",\n  \"passwordNueva\": \"NuevaClave2026!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "me",
+                "password"
+              ]
+            },
+            "description": "Cambia la contrasena del usuario del token, no la de un id arbitrario. Hay que conocer la actual: un access token robado alcanza para hacer requests, pero no para apropiarse de la cuenta.\n\nOjo: si lo ejecutas, el login deja de funcionar con `passwordDemo`. Para volver atras, correr el seed de nuevo."
+          }
+        },
+        {
+          "name": "Editar mis datos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('edita al usuario del token', () => {",
+                  "  pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('usuarioId')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Martin Sosa Perez\",\n  \"telefono\": \"+54 9 351 555-7777\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "me"
+              ]
+            },
+            "description": "Autogestion: cualquier usuario autenticado edita sus propios datos.\n\nEl id sale del token, no de la URL, asi que no hay forma de editar la cuenta de otro.\n\nSolo se pueden cambiar nombreCompleto y telefono. El rol, el email y el estado\nactivo no estan en el DTO a proposito."
+          }
+        },
+        {
+          "name": "Escalada de privilegios (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('rechaza el campo rol', () => {",
+                  "  pm.expect(JSON.stringify(pm.response.json().message)).to.include('rol should not exist');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Quiero ser admin\",\n  \"rol\": \"CENTRO_COORDINADOR\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "me"
+              ]
+            },
+            "description": "Si un usuario pudiera editarse el rol, se haria CENTRO_COORDINADOR y el RBAC\nentero dejaria de valer.\n\nLo frena el ValidationPipe con forbidNonWhitelisted: un campo que el DTO no\ndeclara no se ignora, se rechaza."
+          }
+        },
+        {
+          "name": "Darme de baja",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "",
+                  "// La baja corta la sesion en el acto: el mismo token ya no sirve.",
+                  "pm.sendRequest({",
+                  "  url: pm.collectionVariables.get('baseUrl') + '/auth/me',",
+                  "  method: 'GET',",
+                  "  header: { Authorization: 'Bearer ' + pm.collectionVariables.get('accessToken') }",
+                  "}, (err, res) => {",
+                  "  pm.test('el token queda revocado al instante', () => {",
+                  "    pm.expect(res.code).to.eql(401);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "me"
+              ]
+            },
+            "description": "Baja de la propia cuenta.\n\nAdemas de marcar la fila como inactiva, revoca las sesiones abiertas. Sin eso la\nbaja no tendria efecto inmediato: el access token es un JWT ya firmado y seguiria\nsiendo valido los 15 minutos que le queden de vida.\n\nCuidado: despues de correr esto hay que volver a loguearse con otro usuario, o\ncorrer el seed de nuevo."
+          }
+        },
+        {
+          "name": "Dar de baja usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/{{usuarioCreadoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{usuarioCreadoId}}"
+              ]
+            },
+            "description": "Baja logica: la fila sigue en la base con activo = false, para que las emergencias y\nofertas que cargo ese usuario sigan siendo auditables. Tambien revoca sus sesiones.\n\nUn coordinador no puede darse de baja a si mismo por esta via: para eso esta\nDELETE /usuarios/me."
+          }
+        },
+        {
+          "name": "Sin permisos (403)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Se loguea como AUDITOR, que puede leer pero no crear usuarios.",
+                  "pm.sendRequest({",
+                  "  url: pm.collectionVariables.get('baseUrl') + '/auth/login',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: {",
+                  "    mode: 'raw',",
+                  "    raw: JSON.stringify({ email: 'auditor@rescuesync.ar', password: 'Rescue2026!' })",
+                  "  }",
+                  "}, (err, res) => {",
+                  "  if (!err && res.code === 200) {",
+                  "    pm.collectionVariables.set('tokenAuditor', res.json().accessToken);",
+                  "  }",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));",
+                  "pm.test('el RolesGuard explica el motivo', () => {",
+                  "  pm.expect(pm.response.json().message).to.include('permisos');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAuditor}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"prueba.rbac@rescuesync.ar\",\n  \"password\": \"Rescue2026!\",\n  \"nombreCompleto\": \"No deberia crearse\",\n  \"rol\": \"REPRESENTANTE_ONG\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "description": "Verifica el RBAC: un AUDITOR esta autenticado (pasa el JwtAuthGuard) pero no autorizado a crear usuarios (lo frena el RolesGuard). Debe devolver 403, no 401."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Emergencias",
+      "description": "La raiz del proceso. Su estado es el reflejo local del avance de la instancia en Bonita.\n\nOrden sugerido para recorrer el ciclo completo:\n  1. Login como municipio@rescuesync.ar  -> Registrar emergencia\n  2. Login como coordinador@rescuesync.ar -> Publicar convocatoria\n  3.                                       Cerrar convocatoria\n  4.                                       Habilitar adjudicacion\n  5. Login como municipio@rescuesync.ar  -> Adjudicar\n  6. Login como coordinador@rescuesync.ar -> Finalizar\n\nCada perfil ve un subconjunto distinto del listado: el municipio las suyas, la ONG las\nya publicadas a la red, el coordinador y el auditor todas.",
+      "item": [
+        {
+          "name": "Registrar emergencia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('emergenciaId', body.id);",
+                  "  pm.test('queda en estado REGISTRADA', () => pm.expect(body.estado).to.eql('REGISTRADA'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"INUNDACION\",\n  \"gravedad\": \"ALTA\",\n  \"zonaAfectada\": \"Barrio Costanera, margen sur del rio\",\n  \"descripcion\": \"Crecida del rio tras 48 horas de lluvias intensas. Viviendas anegadas en la ribera.\",\n  \"personasAfectadas\": 350,\n  \"fechaOcurrencia\": \"2026-09-22T14:30:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias"
+              ]
+            },
+            "description": "Eslabon 1. Requiere OPERADOR_MUNICIPAL: loguearse como municipio@rescuesync.ar.\n\nEl municipio NO va en el body: se toma de la organizacion del usuario del token. Si\nviniera del request, un operador podria registrar emergencias a nombre de otro\nmunicipio. Mandar municipioId devuelve 400.\n\nfechaOcurrencia no puede estar en el futuro: un desastre que todavia no paso no se\npuede reportar."
+          }
+        },
+        {
+          "name": "Listar emergencias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('viene paginado', () => {",
+                  "  pm.expect(pm.response.json()).to.have.property('totalElements');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "estado",
+                  "value": "REGISTRADA",
+                  "description": "REGISTRADA | CONVOCATORIA_ABIERTA | CONVOCATORIA_CERRADA | EN_ADJUDICACION | EN_EJECUCION | FINALIZADA | CANCELADA",
+                  "disabled": true
+                },
+                {
+                  "key": "gravedad",
+                  "value": "CRITICA",
+                  "description": "BAJA | MEDIA | ALTA | CRITICA",
+                  "disabled": true
+                },
+                {
+                  "key": "tipo",
+                  "value": "INUNDACION",
+                  "description": "INUNDACION | INCENDIO | TERREMOTO | DESLIZAMIENTO | TORMENTA_SEVERA | OTRO",
+                  "disabled": true
+                },
+                {
+                  "key": "busqueda",
+                  "value": "",
+                  "description": "Zona afectada y descripcion",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Abierto a los cuatro perfiles, pero cada uno ve un subconjunto distinto.\n\nProbalo logueandote con distintos usuarios sobre los mismos datos: la ONG no ve las\nemergencias en estado REGISTRADA, porque todavia no se difundieron a la red.\n\nLos filtros se combinan con el alcance usando AND: ningun query param puede ampliar\nlo que a ese perfil le corresponde ver.\n\nOrdena las mas graves primero y, dentro de cada nivel, las mas recientes."
+          }
+        },
+        {
+          "name": "Obtener emergencia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}"
+              ]
+            },
+            "description": "Una emergencia fuera del alcance del perfil devuelve 404, no 403.\n\nEs deliberado: un 403 confirmaria que el recurso existe, y eso ya es informacion. Un\nmunicipio no tiene por que enterarse de cuantas emergencias cargo el vecino probando\nids."
+          }
+        },
+        {
+          "name": "Corregir emergencia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"INUNDACION\",\n  \"gravedad\": \"CRITICA\",\n  \"zonaAfectada\": \"Barrio Costanera y Villa del Lago\",\n  \"descripcion\": \"Crecida del rio tras 48 horas de lluvias. Se suma el anegamiento de Villa del Lago.\",\n  \"personasAfectadas\": 520,\n  \"fechaOcurrencia\": \"2026-09-22T14:30:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}"
+              ]
+            },
+            "description": "Solo funciona mientras la emergencia esta en REGISTRADA, y solo para el municipio\nduenio.\n\nLo que acota esta operacion es el estado, no los campos: una vez publicada la\nconvocatoria, las ONGs ya ofertaron sobre la informacion original, y cambiarla\ndespues invalidaria sus ofertas en silencio."
+          }
+        },
+        {
+          "name": "1. Publicar convocatoria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado CONVOCATORIA_ABIERTA', () => pm.expect(body.estado).to.eql('CONVOCATORIA_ABIERTA'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaCierreConvocatoria\": \"2026-10-15T18:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/publicar-convocatoria",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "publicar-convocatoria"
+              ]
+            },
+            "description": "Eslabon 2. Requiere CENTRO_COORDINADOR.\n\nAbre la ventana de ofertas a toda la red. La fecha de cierre tiene que estar en el\nfuturo, y es el valor que despues se le pasa al temporizador de Bonita.\n\nCuando exista el dominio de lotes, va a exigir ademas al menos un lote cargado."
+          }
+        },
+        {
+          "name": "2. Cerrar convocatoria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado CONVOCATORIA_CERRADA', () => pm.expect(body.estado).to.eql('CONVOCATORIA_CERRADA'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/cerrar-convocatoria",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "cerrar-convocatoria"
+              ]
+            },
+            "description": "Eslabon 4. La va a disparar el temporizador de Bonita al vencer la ventana.\n\nEl Coordinador tambien puede forzarla: si los lotes ya estan cubiertos no tiene\nsentido esperar al vencimiento."
+          }
+        },
+        {
+          "name": "Reabrir convocatoria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado CONVOCATORIA_ABIERTA', () => pm.expect(body.estado).to.eql('CONVOCATORIA_ABIERTA'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaCierreConvocatoria\": \"2026-10-22T18:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/reabrir-convocatoria",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "reabrir-convocatoria"
+              ]
+            },
+            "description": "El camino alternativo del temporizador que pide la consigna: si vencio el timer y los\nlotes no se cubrieron, el Coordinador reabre la ventana con una fecha nueva en vez de\nseguir con cobertura parcial.\n\nSolo desde CONVOCATORIA_CERRADA."
+          }
+        },
+        {
+          "name": "3. Habilitar adjudicacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado EN_ADJUDICACION', () => pm.expect(body.estado).to.eql('EN_ADJUDICACION'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/habilitar-adjudicacion",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "habilitar-adjudicacion"
+              ]
+            },
+            "description": "Ofertas validadas contra el Sistema Nacional: el municipio ya puede elegir entre ellas."
+          }
+        },
+        {
+          "name": "4. Adjudicar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado EN_EJECUCION', () => pm.expect(body.estado).to.eql('EN_EJECUCION'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/adjudicar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "adjudicar"
+              ]
+            },
+            "description": "Eslabon 5. Requiere OPERADOR_MUNICIPAL, y ademas tiene que ser el municipio duenio:\nvolver a loguearse como municipio@rescuesync.ar.\n\nEl coordinador recibe 403 aunque pueda ver la emergencia: adjudicar es decision del\nmunicipio afectado."
+          }
+        },
+        {
+          "name": "5. Finalizar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado FINALIZADA', () => pm.expect(body.estado).to.eql('FINALIZADA'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/finalizar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "finalizar"
+              ]
+            },
+            "description": "Eslabon 7. Cierre operativo: es el punto donde se liberan los recursos a nivel nacional."
+          }
+        },
+        {
+          "name": "Cancelar emergencia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('queda en estado CANCELADA', () => pm.expect(body.estado).to.eql('CANCELADA'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"La crecida cedio y el municipio resolvio con recursos propios\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/cancelar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "cancelar"
+              ]
+            },
+            "description": "El municipio duenio o el Coordinador. El motivo es obligatorio (10 a 500 caracteres):\nuna emergencia cancelada sin explicacion es inauditable.\n\nNo se puede cancelar desde EN_EJECUCION: en ese punto ya hay recursos comprometidos en\nel Sistema Nacional y gente movilizada. Abandonar un despliegue en curso no es\ncancelar, es otro proceso."
+          }
+        },
+        {
+          "name": "Transicion invalida (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('dice en que estado esta', () => {",
+                  "  pm.expect(pm.response.json().message).to.include('la emergencia esta en estado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/finalizar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "finalizar"
+              ]
+            },
+            "description": "Finalizar solo es legal desde EN_EJECUCION. Ejecutarlo sobre una emergencia recien\nregistrada devuelve 400 explicando en que estado esta y cual haria falta.\n\nLa tabla completa de transiciones vive en src/dominio/emergencias/emergencia-estados.ts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lotes",
+      "description": "Los \"Lotes de Necesidades\" del eslabon 2: una necesidad concreta y cuantificada.\n\nRuta anidada bajo la emergencia porque un lote no tiene sentido fuera de ella. El\ncontrol de acceso se delega: si no podes ver la emergencia, tampoco sus lotes.\n\nSolo se pueden tocar con la emergencia en REGISTRADA o CONVOCATORIA_CERRADA. Con la\nconvocatoria abierta no: las ONGs estan ofertando sobre ellos en ese momento.",
+      "item": [
+        {
+          "name": "Cargar lote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('loteId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoria\": \"PERSONAL\",\n  \"descripcion\": \"Paramedicos con experiencia en rescate acuatico\",\n  \"cantidadRequerida\": 5,\n  \"unidad\": \"personas\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/lotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "lotes"
+              ]
+            },
+            "description": "Requiere CENTRO_COORDINADOR.\n\ncategoria: PERSONAL | ALIMENTOS | AGUA_POTABLE | MEDICAMENTOS | ABRIGO_Y_REFUGIO |\n           EQUIPAMIENTO | TRANSPORTE_Y_LOGISTICA | OTRO\n\nNo se admiten dos lotes con la misma descripcion en una emergencia: o son\nnecesidades distintas mal nombradas, o es la misma y hay que sumar la cantidad."
+          }
+        },
+        {
+          "name": "Cargar segundo lote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoria\": \"ALIMENTOS\",\n  \"descripcion\": \"Raciones de comida no perecedera\",\n  \"cantidadRequerida\": 1000,\n  \"unidad\": \"raciones\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/lotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "lotes"
+              ]
+            },
+            "description": "Un segundo lote, para ver la cobertura parcial de la convocatoria."
+          }
+        },
+        {
+          "name": "Listar lotes con su cobertura",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cada lote informa su cobertura', () => {",
+                  "  pm.response.json().forEach((l) => {",
+                  "    pm.expect(l).to.have.property('porcentajeCobertura');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/lotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "lotes"
+              ]
+            },
+            "description": "cantidadCubierta, porcentajeCobertura y cubierto se calculan al leer, con un\nGROUP BY ... SUM() sobre las lineas de las ofertas adjudicadas.\n\nNo se guardan en una columna a proposito: un contador denormalizado se\ndesincroniza en cuanto alguien retira una oferta, y un numero de cobertura\nequivocado hace que el Coordinador decida mal."
+          }
+        },
+        {
+          "name": "Reformular lote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoria\": \"PERSONAL\",\n  \"descripcion\": \"Paramedicos con experiencia en rescate acuatico\",\n  \"cantidadRequerida\": 8,\n  \"unidad\": \"personas\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/lotes/{{loteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "lotes",
+                "{{loteId}}"
+              ]
+            },
+            "description": "Reformular es una de las salidas que la consigna le da al Coordinador cuando vence\nel temporizador sin cobertura completa."
+          }
+        },
+        {
+          "name": "Borrar lote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/lotes/{{loteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "lotes",
+                "{{loteId}}"
+              ]
+            },
+            "description": "Borrado fisico y no logico: un lote solo se puede borrar antes de que exista\ncualquier oferta sobre el, asi que no hay historia que preservar.\n\nSi ya hay ofertas que lo referencian, devuelve 400: reformular la cantidad, no\neliminarlo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ofertas",
+      "description": "Eslabon 3 en adelante. Una oferta NO pertenece a una organizacion sino a un conjunto:\nesa es la diferencia entre una oferta individual y un consorcio.\n\nOrden sugerido (requiere la emergencia con CONVOCATORIA_ABIERTA y lotes cargados):\n  1. Login como ong@rescuesync.ar     -> Crear oferta (o Crear oferta en consorcio)\n  2.                                     Presentar oferta\n  3. Login como coordinador           -> Consolidado para Bonita\n  4.                                     Validar ofertas\n  5. Login como municipio             -> Adjudicar oferta\n  6. Login como cada ONG              -> Finalizar participacion",
+      "item": [
+        {
+          "name": "Crear oferta individual",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('ofertaId', body.id);",
+                  "  pm.test('nace como BORRADOR version 1', () => {",
+                  "    pm.expect(body.estado).to.eql('BORRADOR');",
+                  "    pm.expect(body.version).to.eql(1);",
+                  "    pm.expect(body.esConsorcio).to.be.false;",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emergenciaId\": 1,\n  \"lineas\": [\n    {\n      \"loteId\": 1,\n      \"organizacionId\": 2,\n      \"cantidad\": 3\n    }\n  ],\n  \"observaciones\": \"Disponibilidad inmediata, traslado por cuenta propia\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ofertas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas"
+              ]
+            },
+            "description": "Requiere REPRESENTANTE_ONG: loguearse como ong@rescuesync.ar (organizacion 2).\n\nOFERTA PARCIAL: cantidad puede ser menor a lo que pide el lote. Si el lote pide 5\nparamedicos y la ONG puede 3, oferta 3 y el resto lo completa otra.\n\norganizacionId de cada linea tiene que ser un participante de la oferta. Sin esa\nvalidacion, una ONG podria declarar aportes a nombre de organizaciones que nunca\naceptaron participar."
+          }
+        },
+        {
+          "name": "Crear oferta en consorcio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('ofertaId', body.id);",
+                  "  pm.test('es un consorcio de dos', () => {",
+                  "    pm.expect(body.esConsorcio).to.be.true;",
+                  "    pm.expect(body.participantes).to.have.lengthOf(2);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emergenciaId\": 1,\n  \"organizacionesAsociadas\": [\n    3\n  ],\n  \"lineas\": [\n    {\n      \"loteId\": 1,\n      \"organizacionId\": 2,\n      \"cantidad\": 3\n    },\n    {\n      \"loteId\": 1,\n      \"organizacionId\": 3,\n      \"cantidad\": 2\n    }\n  ],\n  \"observaciones\": \"Cruz Solidaria y Bomberos cubren el lote en conjunto\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ofertas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas"
+              ]
+            },
+            "description": "EL CONSORCIO DE LA CONSIGNA: dos ONGs se asocian y entre las dos cubren el lote\nque ninguna podia sola. 3 + 2 = los 5 paramedicos pedidos.\n\nQuien crea la oferta queda como lider y es la unica que puede editarla despues.\n\nLas organizaciones 2 (Cruz Solidaria) y 3 (Bomberos) son las del seed. Sumar un\nMUNICIPIO al consorcio devuelve 400: solo pueden ofertar ONG y ORGANISMO_RESCATE."
+          }
+        },
+        {
+          "name": "Editar oferta (nueva version)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('incrementa la version', () => {",
+                  "  pm.expect(pm.response.json().version).to.be.above(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizacionesAsociadas\": [\n    3\n  ],\n  \"lineas\": [\n    {\n      \"loteId\": 1,\n      \"organizacionId\": 2,\n      \"cantidad\": 4\n    },\n    {\n      \"loteId\": 1,\n      \"organizacionId\": 3,\n      \"cantidad\": 2\n    }\n  ],\n  \"observaciones\": \"Se suma un paramedico mas\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}"
+              ]
+            },
+            "description": "Solo la ONG lider, y solo con la ventana de convocatoria abierta.\n\nCada guardado incrementa la version y congela el detalle anterior. Sin esa\ntrazabilidad, una ONG podria bajar su ofrecimiento sobre el cierre y nadie tendria\ncomo demostrar que antes ofrecia otra cosa."
+          }
+        },
+        {
+          "name": "Historial de versiones",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}/versiones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}",
+                "versiones"
+              ]
+            },
+            "description": "La trazabilidad que pide la consigna: el detalle completo de cada version, en JSON."
+          }
+        },
+        {
+          "name": "Presentar oferta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('queda PRESENTADA', () => {",
+                  "  pm.expect(pm.response.json().estado).to.eql('PRESENTADA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}/presentar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}",
+                "presentar"
+              ]
+            },
+            "description": "Un BORRADOR no cuenta para la convocatoria. Presentarla es lo que la pone en juego."
+          }
+        },
+        {
+          "name": "Listar ofertas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ofertas?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "emergenciaId",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "estado",
+                  "value": "PRESENTADA",
+                  "description": "BORRADOR | PRESENTADA | VALIDADA | ADJUDICADA | NO_ADJUDICADA | FINALIZADA | RETIRADA",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "La regla de alcance mas delicada del sistema. Probala con distintos usuarios:\n\n  REPRESENTANTE_ONG   solo las ofertas en las que participa\n  OPERADOR_MUNICIPAL  solo las de sus emergencias, y solo desde que estan validadas\n  COORDINADOR/AUDITOR todas\n\nSi una ONG viera las de las demas durante la ventana, podria mirar lo que oferto la\ncompetencia antes de cerrar la suya. Eso rompe el proceso, no solo la privacidad."
+          }
+        },
+        {
+          "name": "Consolidado para Bonita",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('trae las lineas con su codigo nacional', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('totalOfertas');",
+                  "  if (body.totalOfertas > 0) {",
+                  "    pm.collectionVariables.set('lineaId', body.ofertas[0].lineas[0].lineaId);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/ofertas/consolidado",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "ofertas",
+                "consolidado"
+              ]
+            },
+            "description": "EL PUNTO DE INTEGRACION CON BONITA.\n\nLa consigna lo define asi: al vencer el temporizador, una tarea de servicio o\nconector en Bonita hace un GET a este endpoint para traer el listado consolidado de\nofertas de la emergencia, y despues se lo manda al Sistema Nacional.\n\nCada linea viaja con el codigoNacional de la organizacion que aporta, porque el\ncompromiso de recursos se registra por ONG y no por oferta.\n\nSolo incluye PRESENTADAS y VALIDADAS: los borradores no son ofertas todavia, y las\nretiradas dejaron de serlo."
+          }
+        },
+        {
+          "name": "Validar ofertas (respuesta del Sistema Nacional)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('informa cuantas valido', () => {",
+                  "  pm.expect(pm.response.json()).to.have.property('ofertasValidadas');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resultados\": [\n    {\n      \"lineaId\": 1,\n      \"caracter\": \"PRINCIPAL\",\n      \"perfilCompetencia\": \"Habilitacion nivel 2 - rescate acuatico\"\n    },\n    {\n      \"lineaId\": 2,\n      \"caracter\": \"APOYO_SECUNDARIO\",\n      \"perfilCompetencia\": \"Habilitacion nivel 1 - apoyo logistico\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/ofertas/validar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "ofertas",
+                "validar"
+              ]
+            },
+            "description": "Eslabon 4. Lo invoca Bonita con lo que devolvio el Sistema Nacional.\n\nNO HAY UN CAMPO \"aprobada\" A PROPOSITO. La consigna es explicita en que el Sistema\nNacional no aplica un rechazo punitivo o binario, sino que retorna perfiles de\ncompetencia. Una ONG con menor habilitacion no queda afuera: entra como\nAPOYO_SECUNDARIO en vez de PRINCIPAL.\n\nLos lineaId salen del consolidado. Ajustalos a los que te haya devuelto."
+          }
+        },
+        {
+          "name": "Adjudicar oferta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('queda ADJUDICADA', () => {",
+                  "  pm.expect(pm.response.json().estado).to.eql('ADJUDICADA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}/adjudicar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}",
+                "adjudicar"
+              ]
+            },
+            "description": "Eslabon 5. Requiere OPERADOR_MUNICIPAL, y tiene que ser el municipio duenio de la\nemergencia: loguearse como municipio@rescuesync.ar.\n\nLa emergencia tiene que estar en EN_ADJUDICACION. El coordinador recibe 403: elegir\nes decision del municipio afectado."
+          }
+        },
+        {
+          "name": "Rechazar oferta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"Los lotes que cubria ya fueron adjudicados a otra propuesta\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}/rechazar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}",
+                "rechazar"
+              ]
+            },
+            "description": "Deja la oferta como NO_ADJUDICADA con el motivo. No es un rechazo a la ONG, solo a\nesta propuesta."
+          }
+        },
+        {
+          "name": "Finalizar participacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('la oferta cierra cuando terminaron todas', () => {",
+                  "  const body = pm.response.json();",
+                  "  const todas = body.participantes.every((p) => p.finalizado);",
+                  "  pm.expect(body.estado).to.eql(todas ? 'FINALIZADA' : 'ADJUDICADA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}/finalizar-participacion",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}",
+                "finalizar-participacion"
+              ]
+            },
+            "description": "Eslabon 7, cierre bilateral.\n\nCada ONG del consorcio marca SU parte como terminada. La oferta pasa a FINALIZADA\nrecien cuando lo hicieron todas: es lo que despues habilita a liberar los recursos\nen el Sistema Nacional.\n\nEn un consorcio hay que correrlo una vez con cada ONG: ong@rescuesync.ar y\nbomberos@rescuesync.ar."
+          }
+        },
+        {
+          "name": "Retirar oferta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ofertas/{{ofertaId}}/retirar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ofertas",
+                "{{ofertaId}}",
+                "retirar"
+              ]
+            },
+            "description": "La ONG da de baja su oferta, siempre dentro de la ventana de convocatoria.\n\nUna oferta retirada deja de aparecer en el consolidado que consulta Bonita."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Infraestructura",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Postgres y Redis arriba', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(body.info.postgres.status).to.eql('up');",
+                  "  pm.expect(body.info.redis.status).to.eql('up');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Endpoint publico. Comprueba la conexion a Postgres y a Redis. Esta excluido del rate limiting."
+          }
+        },
+        {
+          "name": "Rate limit (429)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Dispara 6 logins seguidos contra un limite de 3 cada 10s.",
+                  "pm.test('el throttler corta la rafaga con 429', () => {",
+                  "  pm.expect([200, 401, 429]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 429) {",
+                  "  pm.test('el cuerpo explica el motivo', () => {",
+                  "    pm.expect(JSON.stringify(pm.response.json())).to.include('Demasiadas');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"inexistente@rescuesync.ar\",\n  \"password\": \"LoQueSea2026\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Ejecutar 4 o 5 veces seguidas con el boton Send: a partir del cuarto intento en 10 segundos\ndevuelve 429 con los headers Retry-After y X-RateLimit-Remaining.\n\nSon dos mecanismos distintos, los dos terminan en 429:\n  - ThrottlerGuard: corta por cantidad de requests (3 cada 10s en este endpoint).\n  - Bloqueo de IP: corta por 5 logins fallidos, y dura 30 minutos."
+          }
+        }
+      ]
+    }
+  ]
+}

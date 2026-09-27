@@ -1,0 +1,41 @@
+/// Usuario de la aplicacion web. Es el sujeto del RBAC: su rol define que
+/// pantallas y que endpoints puede usar.
+///
+/// Pertenece a una organizacion, que es lo que permite acotar el acceso por
+/// filas: un OPERADOR_MUNICIPAL opera sobre las emergencias de SU municipio.
+model Usuario {
+  id       Int    @id @default(autoincrement())
+  email    String @unique @db.VarChar(120)
+  /// Hash bcrypt, nunca la contrasena en claro.
+  password String @db.VarChar(100)
+
+  nombreCompleto String  @map("nombre_completo") @db.VarChar(150)
+  telefono       String? @db.VarChar(30)
+
+  rol Rol
+
+  /// Nullable a nivel de base, obligatoria segun el rol a nivel de negocio:
+  /// un operador municipal o un representante de ONG sin organizacion no
+  /// tendria sobre que operar, pero un coordinador o un auditor pueden no
+  /// pertenecer a ninguna. La regla vive en UsuariosService, no aca, porque
+  /// depende del rol y una FK no sabe de eso.
+  organizacionId Int?          @map("organizacion_id")
+  organizacion   Organizacion? @relation(fields: [organizacionId], references: [id])
+
+  /// Soft delete: dar de baja un usuario no borra la fila, porque las
+  /// emergencias y ofertas que cargo tienen que seguir siendo auditables.
+  activo Boolean @default(true)
+
+  fechaCreacion      DateTime  @default(now()) @map("fecha_creacion")
+  fechaActualizacion DateTime  @updatedAt @map("fecha_actualizacion")
+  ultimoAcceso       DateTime? @map("ultimo_acceso")
+
+  emergenciasRegistradas Emergencia[]
+  ofertasPresentadas     Oferta[]
+  versionesDeOferta      OfertaVersion[]
+
+  @@index([rol])
+  @@index([organizacionId])
+  @@index([activo])
+  @@map("usuarios")
+}
