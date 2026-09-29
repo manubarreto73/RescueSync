@@ -25,7 +25,7 @@ export class UsuarioResponseDto {
   @ApiProperty({ enum: Rol })
   rol!: Rol;
 
-  @ApiPropertyOptional({ example: 1, nullable: true })
+  @ApiPropertyOptional({ type: Number, example: 1, nullable: true })
   organizacionId!: number | null;
 
   @ApiProperty()
