@@ -10,7 +10,14 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
@@ -58,6 +65,20 @@ export class EmergenciasController {
    */
   @Get()
   @ApiOperation({ summary: 'Lista emergencias segun el alcance del perfil' })
+  @ApiExtraModels(PageResponse, EmergenciaResponseDto)
+  @ApiResponse({
+    status: 200,
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(PageResponse) },
+        {
+          properties: {
+            content: { type: 'array', items: { $ref: getSchemaPath(EmergenciaResponseDto) } },
+          },
+        },
+      ],
+    },
+  })
   getAll(
     @Query() query: FindEmergenciasQuery,
     @CurrentUser() user: AuthenticatedUser,
