@@ -65,18 +65,17 @@ export class EmergenciasController {
    */
   @Get()
   @ApiOperation({ summary: 'Lista emergencias segun el alcance del perfil' })
-  @ApiExtraModels(PageResponse, EmergenciaResponseDto)
+  @ApiExtraModels(EmergenciaResponseDto)
   @ApiResponse({
     status: 200,
     schema: {
-      allOf: [
-        { $ref: getSchemaPath(PageResponse) },
-        {
-          properties: {
-            content: { type: 'array', items: { $ref: getSchemaPath(EmergenciaResponseDto) } },
-          },
-        },
-      ],
+      properties: {
+        content: { type: 'array', items: { $ref: getSchemaPath(EmergenciaResponseDto) } },
+        page: { type: 'number' },
+        size: { type: 'number' },
+        totalElements: { type: 'number' },
+        totalPages: { type: 'number' },
+      },
     },
   })
   getAll(
