@@ -48,6 +48,7 @@ export class LotesController {
   @Post()
   @Roles(Rol.CENTRO_COORDINADOR)
   @ApiOperation({ summary: 'Agrega un lote al desglose (eslabon 2)' })
+  @ApiResponse({ status: 201, type: LoteResponseDto })
   @ApiResponse({ status: 400, description: 'La emergencia no admite cambios en sus lotes' })
   create(
     @Param('emergenciaId', ParseIntPipe) emergenciaId: number,
