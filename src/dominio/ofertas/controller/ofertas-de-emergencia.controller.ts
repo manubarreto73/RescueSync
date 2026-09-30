@@ -9,6 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AccesoServicio } from '../../../common/decorators/acceso-servicio.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { Rol } from '../../../common/enums/rol.enum';
@@ -32,6 +33,7 @@ export class OfertasDeEmergenciaController {
 
   @Get('consolidado')
   @Roles(Rol.CENTRO_COORDINADOR, Rol.AUDITOR)
+  @AccesoServicio()
   @ApiOperation({
     summary: 'Listado consolidado de ofertas de la emergencia (lo consulta Bonita)',
   })
@@ -45,6 +47,7 @@ export class OfertasDeEmergenciaController {
 
   @Post('validar')
   @Roles(Rol.CENTRO_COORDINADOR)
+  @AccesoServicio()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Aplica el resultado de la validacion del Sistema Nacional (eslabon 4)',

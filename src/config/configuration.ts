@@ -56,4 +56,35 @@ export default () => ({
     attemptsWindowMinutes: parseInt(process.env.LOGIN_ATTEMPTS_WINDOW_MIN ?? '5', 10),
     blockDurationMinutes: parseInt(process.env.LOGIN_BLOCK_DURATION_MIN ?? '30', 10),
   },
+
+  bonita: {
+    // Apagado salvo que se prenda explicitamente: los tests e2e y quien
+    // levante la API sin el motor no tienen por que depender de el.
+    enabled: process.env.BONITA_ENABLED === 'true',
+    // Raiz de la webapp, sin barra final: http://localhost:8080/bonita
+    url: (process.env.BONITA_URL ?? 'http://localhost:8080/bonita').replace(/\/+$/, ''),
+    // Un usuario de Bonita por actor del proceso: cada tarea la ejecuta el
+    // usuario mapeado al actor de su lane.
+    usuarios: {
+      municipio: {
+        username: process.env.BONITA_MUNICIPIO_USERNAME ?? '',
+        password: process.env.BONITA_MUNICIPIO_PASSWORD ?? '',
+      },
+      coordinador: {
+        username: process.env.BONITA_COORDINADOR_USERNAME ?? '',
+        password: process.env.BONITA_COORDINADOR_PASSWORD ?? '',
+      },
+      ong: {
+        username: process.env.BONITA_ONG_USERNAME ?? '',
+        password: process.env.BONITA_ONG_PASSWORD ?? '',
+      },
+    },
+    processName: process.env.BONITA_PROCESS_NAME ?? 'RescueSync',
+    // Vacio = la ultima version habilitada.
+    processVersion: process.env.BONITA_PROCESS_VERSION || undefined,
+    timeoutMs: parseInt(process.env.BONITA_TIMEOUT_MS ?? '10000', 10),
+    // Token fijo con el que Bonita se autentica contra esta API cuando la
+    // llama desde un conector (header X-Service-Token). Vacio = deshabilitado.
+    callbackToken: process.env.BONITA_CALLBACK_TOKEN ?? '',
+  },
 });

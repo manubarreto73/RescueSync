@@ -93,6 +93,19 @@ const usuarios = [
     telefono: '+54 9 351 555-0004',
     organizacion: null,
   },
+  // Superusuario de desarrollo: todos los permisos, sin organizacion. No se
+  // siembra en produccion (y JwtStrategy lo rechaza ahi de todos modos).
+  ...(process.env.NODE_ENV === 'production'
+    ? []
+    : [
+        {
+          email: 'admin@rescuesync.ar',
+          nombreCompleto: 'Administrador (desarrollo)',
+          rol: Rol.ADMIN,
+          telefono: null,
+          organizacion: null,
+        },
+      ]),
 ];
 
 async function main() {

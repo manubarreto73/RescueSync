@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { EstadoEmergencia, Prisma } from '@prisma/client';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
-import { Rol } from '../../../common/enums/rol.enum';
+import { Rol, esAdmin } from '../../../common/enums/rol.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ResourceNotFoundException } from '../../../common/exceptions/resource-not-found.exception';
 import { AuthenticatedUser } from '../../../security/interfaces/jwt-payload.interface';
@@ -17,6 +17,7 @@ import { ChangeEmergenciaDto } from '../dtos/request/change-emergencia.dto';
 import { FindEmergenciasQuery } from '../dtos/request/find-emergencias.query';
 import { PublicarConvocatoriaDto } from '../dtos/request/publicar-convocatoria.dto';
 import { RegisterEmergenciaDto } from '../dtos/request/register-emergencia.dto';
+import { BonitaProcesoService } from '../../../integracion/bonita/bonita-proceso.service';
 import { LotesService } from '../../lotes/services/lotes.service';
 import { EmergenciaRepository } from '../repositories/emergencia.repository';
 
@@ -30,6 +31,7 @@ export class EmergenciasService {
     // control de acceso. Ver el comentario en LotesModule.
     @Inject(forwardRef(() => LotesService))
     private readonly lotesService: LotesService,
+    private readonly bonita: BonitaProcesoService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -50,6 +52,7 @@ export class EmergenciasService {
       // Transversales a la red: ven todo.
       case Rol.CENTRO_COORDINADOR:
       case Rol.AUDITOR:
+      case Rol.ADMIN:
         return {};
 
       // Solo las de su propio municipio.
@@ -92,6 +95,7 @@ export class EmergenciasService {
     switch (user.rol) {
       case Rol.CENTRO_COORDINADOR:
       case Rol.AUDITOR:
+      case Rol.ADMIN:
         return true;
       case Rol.OPERADOR_MUNICIPAL:
         return emergencia.municipioId === user.organizacionId;
@@ -161,10 +165,26 @@ export class EmergenciasService {
         `(${emergencia.municipio.nombre}, gravedad ${emergencia.gravedad})`,
     );
 
-    // Aca va a ir el arranque de la instancia en Bonita, guardando el
-    // bonitaCaseId. Se hace despues del commit y sin tumbar el alta si falla:
-    // perder el registro de un desastre porque el motor estaba caido seria
-    // mucho peor que quedar sin caso.
+    /**
+     * Arranque del caso en Bonita, despues del commit y sin tumbar el alta si
+     * falla: perder el registro de un desastre porque el motor estaba caido
+     * seria mucho peor que quedar sin caso. Si queda sin caso, se le arranca
+     * uno al publicar la convocatoria (ver asegurarCaso).
+     */
+    try {
+      const caseId = await this.bonita.iniciarCaso(emergencia.id);
+
+      if (caseId) {
+        const conCaso = await this.emergenciaRepository.update(emergencia.id, {
+          bonitaCaseId: caseId,
+        });
+        return EmergenciaResponseDto.from(conCaso);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Emergencia ${emergencia.id} registrada sin caso de Bonita: ${this.motivo(error)}`,
+      );
+    }
 
     return EmergenciaResponseDto.from(emergencia);
   }
@@ -227,13 +247,33 @@ export class EmergenciasService {
       );
     }
 
+    /**
+     * Desde aca Bonita es quien lleva el tiempo: sin caso no hay temporizador
+     * y la convocatoria no se cerraria nunca. Por eso, a diferencia del alta,
+     * si el motor falla la publicacion falla (503) y la emergencia queda
+     * REGISTRADA, en vez de abrir una ventana que nadie va a cerrar.
+     */
+    const caseId = await this.asegurarCaso(emergencia);
+    await this.bonita.publicarConvocatoria(caseId);
+
     return this.aplicar(emergencia, 'publicar-convocatoria', {
       fechaCierreConvocatoria: dto.fechaCierreConvocatoria,
+      bonitaCaseId: caseId || undefined,
     });
   }
 
+  /**
+   * La llama el conector de Bonita al vencer el temporizador, o el
+   * Coordinador si quiere cerrar antes. En el segundo caso hay que avisarle al
+   * motor; en el primero BonitaProcesoService detecta que no hace falta.
+   */
   async cerrarConvocatoria(id: number, user: AuthenticatedUser): Promise<EmergenciaResponseDto> {
     const emergencia = await this.transicionar(id, 'cerrar-convocatoria', user);
+
+    if (emergencia.bonitaCaseId) {
+      await this.bonita.cerrarConvocatoria(emergencia.bonitaCaseId);
+    }
+
     return this.aplicar(emergencia, 'cerrar-convocatoria');
   }
 
@@ -244,8 +284,18 @@ export class EmergenciasService {
   ): Promise<EmergenciaResponseDto> {
     const emergencia = await this.transicionar(id, 'reabrir-convocatoria', user);
 
+    /**
+     * El diagrama no tiene camino de vuelta: al cerrarse la convocatoria el
+     * caso termino. Reabrir es arrancar un caso nuevo y llevarlo hasta
+     * "Cargar / editar ofertas", que vuelve a poner el temporizador en marcha.
+     * El caso anterior queda en el historial de Bonita.
+     */
+    const caseId = await this.bonita.iniciarCaso(emergencia.id);
+    if (caseId) await this.bonita.publicarConvocatoria(caseId);
+
     return this.aplicar(emergencia, 'reabrir-convocatoria', {
       fechaCierreConvocatoria: dto.fechaCierreConvocatoria,
+      bonitaCaseId: caseId ?? undefined,
     });
   }
 
@@ -278,7 +328,26 @@ export class EmergenciasService {
       this.exigirPropiedad(emergencia, user);
     }
 
-    return this.aplicar(emergencia, 'cancelar', { motivoCancelacion: dto.motivo });
+    const cancelada = await this.aplicar(emergencia, 'cancelar', { motivoCancelacion: dto.motivo });
+
+    /**
+     * Despues de persistir y sin tumbar la cancelacion si el motor falla: la
+     * decision del usuario vale aunque Bonita este caido. Si el caso queda
+     * vivo y el temporizador vence, el cierre se rechaza por estado invalido
+     * y el error queda a la vista en el portal de Bonita.
+     */
+    if (emergencia.bonitaCaseId) {
+      try {
+        await this.bonita.cancelarCaso(emergencia.bonitaCaseId);
+      } catch (error) {
+        this.logger.error(
+          `Emergencia ${id} cancelada, pero el caso ${emergencia.bonitaCaseId} ` +
+            `sigue en Bonita: ${this.motivo(error)}`,
+        );
+      }
+    }
+
+    return cancelada;
   }
 
   // ------------------------------------------------------------------
@@ -301,7 +370,7 @@ export class EmergenciasService {
     const emergencia = await this.findVisible(id, user);
     const transicion = TRANSICIONES[accion];
 
-    if (!transicion.quien.includes(user.rol)) {
+    if (!esAdmin(user.rol) && !transicion.quien.includes(user.rol)) {
       throw new ForbiddenException(
         `El perfil ${user.rol} no puede ${transicion.descripcion} de una emergencia`,
       );
@@ -334,9 +403,24 @@ export class EmergenciasService {
     return EmergenciaResponseDto.from(actualizada);
   }
 
+  /**
+   * Caso de Bonita de la emergencia. Si el alta no pudo crearlo (motor caido
+   * en ese momento), se crea ahora. Devuelve '' con la integracion apagada.
+   */
+  private async asegurarCaso(emergencia: EmergenciaConRelaciones): Promise<string> {
+    if (emergencia.bonitaCaseId || !this.bonita.habilitado) return emergencia.bonitaCaseId ?? '';
+
+    this.logger.warn(`Emergencia ${emergencia.id} sin caso de Bonita: se inicia ahora`);
+    return (await this.bonita.iniciarCaso(emergencia.id)) ?? '';
+  }
+
+  private motivo(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   /** El usuario tiene que pertenecer al municipio duenio de la emergencia. */
   private exigirPropiedad(emergencia: EmergenciaConRelaciones, user: AuthenticatedUser): void {
-    if (emergencia.municipioId !== user.organizacionId) {
+    if (!esAdmin(user.rol) && emergencia.municipioId !== user.organizacionId) {
       throw new ForbiddenException('La emergencia pertenece a otro municipio');
     }
   }

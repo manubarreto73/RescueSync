@@ -1,11 +1,14 @@
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUrl,
   MinLength,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
 
@@ -46,6 +49,49 @@ class EnvironmentVariables {
   @IsString()
   @MinLength(32, { message: 'JWT_SECRET debe tener al menos 32 caracteres' })
   JWT_SECRET!: string;
+
+  // Solo se exigen con la integracion prendida: sin motor no hacen falta.
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsUrl(
+    { protocols: ['http', 'https'], require_tld: false },
+    {
+      message: 'BONITA_URL debe ser la raiz de la webapp, por ejemplo http://localhost:8080/bonita',
+    },
+  )
+  BONITA_URL?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  BONITA_ENABLED?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsNotEmpty({ message: 'BONITA_MUNICIPIO_USERNAME es obligatorio con BONITA_ENABLED=true' })
+  BONITA_MUNICIPIO_USERNAME?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsNotEmpty({ message: 'BONITA_MUNICIPIO_PASSWORD es obligatorio con BONITA_ENABLED=true' })
+  BONITA_MUNICIPIO_PASSWORD?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsNotEmpty({ message: 'BONITA_COORDINADOR_USERNAME es obligatorio con BONITA_ENABLED=true' })
+  BONITA_COORDINADOR_USERNAME?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsNotEmpty({ message: 'BONITA_COORDINADOR_PASSWORD es obligatorio con BONITA_ENABLED=true' })
+  BONITA_COORDINADOR_PASSWORD?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsNotEmpty({ message: 'BONITA_ONG_USERNAME es obligatorio con BONITA_ENABLED=true' })
+  BONITA_ONG_USERNAME?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
+  @IsNotEmpty({ message: 'BONITA_ONG_PASSWORD es obligatorio con BONITA_ENABLED=true' })
+  BONITA_ONG_PASSWORD?: string;
+
+  // Si esta, tiene que ser largo: es una credencial con permisos de coordinador.
+  @ValidateIf((env: EnvironmentVariables) => !!env.BONITA_CALLBACK_TOKEN)
+  @MinLength(32, { message: 'BONITA_CALLBACK_TOKEN debe tener al menos 32 caracteres' })
+  BONITA_CALLBACK_TOKEN?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

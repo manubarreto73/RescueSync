@@ -606,4 +606,62 @@ describe('Emergencias (e2e)', () => {
       expect(res.body.message).toContain('EN_EJECUCION');
     });
   });
+
+  // ------------------------------------------------------------------
+
+  /**
+   * Bonita llama a la API desde sus conectores con el header X-Service-Token.
+   * El token vale solo en los endpoints marcados con @AccesoServicio.
+   */
+  describe('Token de servicio de Bonita', () => {
+    const TOKEN = process.env.BONITA_CALLBACK_TOKEN!;
+
+    const comoBonita = (metodo: 'get' | 'post', ruta: string, token = TOKEN) =>
+      request(ctx.app.getHttpServer())[metodo](`${BASE}${ruta}`).set('X-Service-Token', token);
+
+    it('cierra la convocatoria al vencer el temporizador', async () => {
+      const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_ABIERTA);
+
+      const res = await comoBonita(
+        'post',
+        `/emergencias/${emergencia.id}/cerrar-convocatoria`,
+      ).expect(200);
+
+      expect(res.body.estado).toBe(EstadoEmergencia.CONVOCATORIA_CERRADA);
+    });
+
+    it('lee el consolidado de ofertas', async () => {
+      const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_CERRADA);
+
+      const res = await comoBonita(
+        'get',
+        `/emergencias/${emergencia.id}/ofertas/consolidado`,
+      ).expect(200);
+
+      expect(res.body.emergenciaId).toBe(emergencia.id);
+    });
+
+    it('rechaza un token invalido con 401', async () => {
+      const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_ABIERTA);
+
+      await comoBonita(
+        'post',
+        `/emergencias/${emergencia.id}/cerrar-convocatoria`,
+        'x'.repeat(40),
+      ).expect(401);
+    });
+
+    it('no sirve en endpoints que no lo habilitan', async () => {
+      const emergencia = await sembrarEmergencia();
+
+      await comoBonita('get', `/emergencias/${emergencia.id}`).expect(401);
+      await comoBonita('post', `/emergencias/${emergencia.id}/cancelar`).expect(401);
+    });
+
+    it('sin header, los endpoints de servicio siguen aceptando el JWT de usuario', async () => {
+      const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_ABIERTA);
+
+      await post(emergencia.id, 'cerrar-convocatoria', tokenCoordinador).expect(200);
+    });
+  });
 });

@@ -530,6 +530,13 @@ antes ya expiro por su cuenta y la marca no hace falta.
 | ong@rescuesync.ar | REPRESENTANTE_ONG | Cruz Solidaria |
 | bomberos@rescuesync.ar | REPRESENTANTE_ONG | Bomberos Voluntarios de Cosquin |
 | auditor@rescuesync.ar | AUDITOR | — |
+| admin@rescuesync.ar | ADMIN | — |
+
+`admin@rescuesync.ar` es un **superusuario de desarrollo**: pasa todos los `@Roles`, ve todas
+las filas y saltea los chequeos de duenio y de lider. No puede registrar emergencias,
+crear ofertas ni finalizar participaciones, porque eso exige pertenecer a una organizacion:
+para eso se usan los otros usuarios. No se siembra con `NODE_ENV=production`, la API lo
+rechaza en produccion aunque este en la base, y no se puede crear por `POST /usuarios`.
 
 ---
 
@@ -754,6 +761,36 @@ tiempo: la suite entera corre en ~40 segundos.
 
 ## Integracion con Bonita
 
-Al vencer el timer de la convocatoria, Bonita hace un `GET` contra esta API para obtener
-el listado consolidado de ofertas de una emergencia. Ese endpoint se implementa en el
-modulo `ofertas` y se autentica con un token de servicio, no con sesion de usuario.
+Vive en `src/integracion/bonita/`. Se prende con `BONITA_ENABLED=true` (ver `.env.example`);
+apagada, la API funciona igual y las emergencias quedan sin `bonitaCaseId`.
+
+### API -> Bonita (orquestacion)
+
+Cada tarea humana del diagrama la ejecuta el usuario de Bonita mapeado al actor de su lane,
+con una sesion por actor (`/loginservice` + cookie `JSESSIONID` + header `X-Bonita-API-Token`):
+
+| Accion en la API | Que pasa en Bonita | Usuario |
+|---|---|---|
+| `POST /emergencias` | instancia el proceso y completa **Registrar emergencia** con `{ id }` (queda en la variable de proceso `id`) | Operador municipal |
+| `POST /:id/publicar-convocatoria` | completa **Generar lotes**: el caso queda en **Cargar / editar ofertas** con el timer corriendo | Coordinador regional |
+| `POST /:id/cerrar-convocatoria` (Coordinador, antes del timer) | completa **Cargar / editar ofertas**: el caso termina sin pasar por el conector | Representante de ONG |
+| `POST /:id/cerrar-convocatoria` (conector, al vencer el timer) | nada: la tarea ya no esta pendiente | — |
+| `POST /:id/reabrir-convocatoria` | el caso anterior termino, se arranca uno nuevo hasta el timer | los tres |
+| `POST /:id/cancelar` | borra el caso | Operador municipal |
+
+Si Bonita falla en el alta, la emergencia se guarda igual y el caso se crea al publicar. Si
+falla al publicar, la publicacion falla con 503: sin caso no hay temporizador que cierre la
+ventana.
+
+### Bonita -> API (conectores)
+
+Los conectores se autentican con el header `X-Service-Token: <BONITA_CALLBACK_TOKEN>`, que
+solo vale en los endpoints marcados con `@AccesoServicio()`:
+
+- `POST /api/v1/emergencias/:id/cerrar-convocatoria`
+- `GET /api/v1/emergencias/:id/ofertas/consolidado`
+- `POST /api/v1/emergencias/:id/ofertas/validar`
+
+En el conector REST de **Step1** la URL tiene que llevar el esquema
+(`'http://localhost:3000/api/v1/emergencias/' + id + '/cerrar-convocatoria'`) y el header
+`X-Service-Token` en la tabla de headers.

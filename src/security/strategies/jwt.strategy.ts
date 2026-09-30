@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
+import { esAdmin } from '../../common/enums/rol.enum';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthenticatedUser, JwtPayload } from '../interfaces/jwt-payload.interface';
 import { SessionRevocationService } from '../session-revocation.service';
@@ -14,6 +15,8 @@ import { SessionRevocationService } from '../session-revocation.service';
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  private readonly esProduccion: boolean;
+
   constructor(
     config: ConfigService,
     private readonly revocacion: SessionRevocationService,
@@ -24,6 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       secretOrKey: config.getOrThrow<string>('jwt.secret'),
       passReqToCallback: true,
     });
+    this.esProduccion = config.get<string>('app.env') === 'production';
   }
 
   async validate(
@@ -36,6 +40,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     // sea porque se hizo logout con el o porque el usuario se dio de baja.
     if (await this.revocacion.estaRevocado(token, payload.sub)) {
       throw new UnauthorizedException('Sesion finalizada');
+    }
+
+    // El superusuario de desarrollo no existe en produccion, aunque alguien
+    // lo haya dejado cargado en la base.
+    if (this.esProduccion && esAdmin(payload.rol)) {
+      throw new UnauthorizedException('El perfil ADMIN esta deshabilitado en produccion');
     }
 
     return {

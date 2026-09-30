@@ -27,6 +27,7 @@ const ORGANIZACION_SEGUN_ROL: Record<Rol, TipoOrganizacion[]> = {
   [Rol.REPRESENTANTE_ONG]: [TipoOrganizacion.ONG, TipoOrganizacion.ORGANISMO_RESCATE],
   [Rol.CENTRO_COORDINADOR]: [],
   [Rol.AUDITOR]: [],
+  [Rol.ADMIN]: [],
 };
 
 /**
@@ -211,6 +212,12 @@ export class UsuariosService {
    * sobre los datos de un municipio.
    */
   private async validarPertenencia(rol: Rol, organizacionId?: number): Promise<void> {
+    // El superusuario de desarrollo no se da de alta por la API: si un
+    // coordinador pudiera crearlo, se estaria dando a si mismo mas permisos.
+    if (rol === Rol.ADMIN) {
+      throw new BusinessException('El perfil ADMIN solo se crea desde el seed de desarrollo');
+    }
+
     const tiposAdmitidos = ORGANIZACION_SEGUN_ROL[rol];
     const necesitaOrganizacion = tiposAdmitidos.length > 0;
 

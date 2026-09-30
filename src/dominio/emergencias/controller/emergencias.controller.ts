@@ -11,6 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AccesoServicio } from '../../../common/decorators/acceso-servicio.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
@@ -104,12 +105,13 @@ export class EmergenciasController {
   }
 
   /**
-   * La va a disparar el temporizador de Bonita al vencer la ventana. El
-   * Coordinador tambien puede forzarla: si los lotes ya estan cubiertos no
-   * tiene sentido esperar al vencimiento.
+   * La dispara el conector de Bonita al vencer el temporizador, autenticado
+   * con el token de servicio. El Coordinador tambien puede forzarla: si los
+   * lotes ya estan cubiertos no tiene sentido esperar al vencimiento.
    */
   @Post(':id/cerrar-convocatoria')
   @Roles(Rol.CENTRO_COORDINADOR)
+  @AccesoServicio()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cierra la ventana de ofertas (eslabon 4)' })
   cerrarConvocatoria(

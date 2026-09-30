@@ -5,4 +5,7 @@ enum Rol {
   CENTRO_COORDINADOR
   REPRESENTANTE_ONG
   AUDITOR
+  /// Superusuario de desarrollo: pasa todos los chequeos de rol y de
+  /// pertenencia. Solo lo crea el seed y se rechaza con NODE_ENV=production.
+  ADMIN
 }

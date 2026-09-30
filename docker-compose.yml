@@ -61,6 +61,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-rescuesync}:${POSTGRES_PASSWORD:-rescuesync}@postgres:5432/${POSTGRES_DB:-rescuesync}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    # Bonita corre en el host (Studio), no en esta red: host.docker.internal
+    # apunta al host desde el contenedor. Usar BONITA_URL=http://host.docker.internal:8080/bonita
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     # Aplica las migraciones pendientes y recien despues arranca la app.
     # Es el equivalente a que Flyway corra en el startup de Spring.
     #

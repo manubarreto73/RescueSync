@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { EstadoEmergencia, EstadoOferta, Prisma, TipoOrganizacion } from '@prisma/client';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
-import { Rol } from '../../../common/enums/rol.enum';
+import { Rol, esAdmin } from '../../../common/enums/rol.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ResourceNotFoundException } from '../../../common/exceptions/resource-not-found.exception';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -57,6 +57,7 @@ export class OfertasService {
     switch (user.rol) {
       case Rol.CENTRO_COORDINADOR:
       case Rol.AUDITOR:
+      case Rol.ADMIN:
         return {};
 
       case Rol.REPRESENTANTE_ONG:
@@ -84,6 +85,7 @@ export class OfertasService {
     switch (user.rol) {
       case Rol.CENTRO_COORDINADOR:
       case Rol.AUDITOR:
+      case Rol.ADMIN:
         return true;
       case Rol.REPRESENTANTE_ONG:
         return oferta.participantes.some((p) => p.organizacionId === user.organizacionId);
@@ -405,7 +407,7 @@ export class OfertasService {
 
     const emergencia = await this.emergenciasService.findVisible(oferta.emergenciaId, user);
 
-    if (emergencia.municipioId !== user.organizacionId) {
+    if (!esAdmin(user.rol) && emergencia.municipioId !== user.organizacionId) {
       throw new ForbiddenException('La emergencia pertenece a otro municipio');
     }
 
@@ -434,7 +436,7 @@ export class OfertasService {
 
     const emergencia = await this.emergenciasService.findVisible(oferta.emergenciaId, user);
 
-    if (emergencia.municipioId !== user.organizacionId) {
+    if (!esAdmin(user.rol) && emergencia.municipioId !== user.organizacionId) {
       throw new ForbiddenException('La emergencia pertenece a otro municipio');
     }
 
@@ -497,7 +499,7 @@ export class OfertasService {
   }
 
   private exigirLider(oferta: OfertaConRelaciones, user: AuthenticatedUser): void {
-    if (oferta.organizacionLiderId !== user.organizacionId) {
+    if (!esAdmin(user.rol) && oferta.organizacionLiderId !== user.organizacionId) {
       throw new ForbiddenException(
         'Solo la organizacion que lidera el consorcio puede modificar la oferta',
       );
