@@ -72,7 +72,7 @@ services:
     # el codigo esta montado desde /mnt/c: los eventos inotify no cruzan el
     # puente entre el filesystem de Windows y el de Linux, asi que el watcher
     # por defecto nunca se entera de que guardaste un archivo.
-    command: sh -c "npx prisma migrate deploy && npm run start:dev -- -p tsconfig.docker.json"
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run start:dev -- -p tsconfig.docker.json"
     ports:
       - '${PORT:-3000}:3000'
       - '9229:9229' # debugger de Node
