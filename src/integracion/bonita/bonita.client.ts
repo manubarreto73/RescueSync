@@ -23,7 +23,7 @@ export interface BonitaTarea {
  * Bonita, el que esta mapeado a ese actor en el proceso desplegado: asi el
  * historial del caso muestra quien hizo cada paso, y no un unico tecnico.
  */
-export type ActorBonita = 'municipio' | 'coordinador' | 'ong';
+export type ActorBonita = 'admin' | 'municipio' | 'coordinador' | 'ong';
 
 interface Credenciales {
   username: string;
@@ -60,6 +60,7 @@ export class BonitaException extends ServiceUnavailableException {
  * Hay una sesion por actor, compartida entre todos los requests de la API: el
  * usuario de la app ya fue autorizado por el RBAC propio antes de llegar aca,
  * y en Bonita se actua con la cuenta mapeada al actor de la tarea.
+ * Las consultas globales de catalogo y tareas se ejecutan con la sesion 'admin'.
  */
 @Injectable()
 export class BonitaClient {
@@ -85,16 +86,15 @@ export class BonitaClient {
   // Procesos y casos
   // ------------------------------------------------------------------
 
-  /** Proceso habilitado con ese nombre; sin version, el ultimo desplegado. */
+  /** Proceso habilitado con ese nombre; sin version, el ultimo desplegado. Consulta con admin. */
   async buscarProceso(
-    actor: ActorBonita,
     nombre: string,
     version?: string,
   ): Promise<BonitaProceso | null> {
     const filtros = [`name=${nombre}`, 'activationState=ENABLED'];
     if (version) filtros.push(`version=${version}`);
 
-    const procesos = await this.get<BonitaProceso[]>(actor, '/API/bpm/process', {
+    const procesos = await this.get<BonitaProceso[]>('admin', '/API/bpm/process', {
       p: '0',
       c: '1',
       o: 'deploymentDate DESC',
@@ -119,22 +119,21 @@ export class BonitaClient {
     return String(caseId);
   }
 
-  /** Borra el caso del motor, con todas sus tareas pendientes. */
-  async borrarCaso(actor: ActorBonita, caseId: string): Promise<void> {
-    await this.request(actor, 'DELETE', `/API/bpm/case/${caseId}`);
+  /** Borra el caso del motor, con todas sus tareas pendientes. Ejecuta con admin. */
+  async borrarCaso(caseId: string): Promise<void> {
+    await this.request('admin', 'DELETE', `/API/bpm/case/${caseId}`);
   }
 
   // ------------------------------------------------------------------
   // Tareas humanas
   // ------------------------------------------------------------------
 
-  /** Tarea lista para ejecutar en ese caso, o null si no hay ninguna. */
+  /** Tarea lista para ejecutar en ese caso, o null si no hay ninguna. Consulta con admin. */
   async buscarTareaPendiente(
-    actor: ActorBonita,
     caseId: string,
     nombre: string,
   ): Promise<BonitaTarea | null> {
-    const tareas = await this.get<BonitaTarea[]>(actor, '/API/bpm/humanTask', {
+    const tareas = await this.get<BonitaTarea[]>('admin', '/API/bpm/humanTask', {
       p: '0',
       c: '1',
       f: [`caseId=${caseId}`, `name=${nombre}`, 'state=ready'],

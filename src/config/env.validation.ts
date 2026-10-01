@@ -64,6 +64,12 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   BONITA_ENABLED?: string;
 
+  @IsOptional()
+  BONITA_ADMIN_USERNAME?: string;
+
+  @IsOptional()
+  BONITA_ADMIN_PASSWORD?: string;
+
   @ValidateIf((env: EnvironmentVariables) => env.BONITA_ENABLED === 'true')
   @IsNotEmpty({ message: 'BONITA_MUNICIPIO_USERNAME es obligatorio con BONITA_ENABLED=true' })
   BONITA_MUNICIPIO_USERNAME?: string;

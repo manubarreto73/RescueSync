@@ -15,6 +15,7 @@ interface Llamada {
 }
 
 const USUARIOS = {
+  admin: { username: 'admin', password: 'bpm' },
   municipio: { username: 'april.sanchez', password: 'bpm' },
   coordinador: { username: 'anthony.nichols', password: 'bpm' },
   ong: { username: 'daniela.angelo', password: 'bpm' },
@@ -198,7 +199,7 @@ describe('BonitaProcesoService', () => {
     await servicio.cancelarCaso('1001');
 
     const logins = llamadas.filter((l) => l.url.pathname === '/bonita/loginservice');
-    expect(logins).toHaveLength(2);
+    expect(logins).toHaveLength(3);
   });
 
   it('con la integracion apagada no hace ningun request', async () => {

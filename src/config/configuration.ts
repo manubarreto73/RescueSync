@@ -65,7 +65,12 @@ export default () => ({
     url: (process.env.BONITA_URL ?? 'http://localhost:8080/bonita').replace(/\/+$/, ''),
     // Un usuario de Bonita por actor del proceso: cada tarea la ejecuta el
     // usuario mapeado al actor de su lane.
+    // 'admin' se usa para consultas tecnicas de catalogo y tareas.
     usuarios: {
+      admin: {
+        username: process.env.BONITA_ADMIN_USERNAME || 'admin',
+        password: process.env.BONITA_ADMIN_PASSWORD || 'bpm',
+      },
       municipio: {
         username: process.env.BONITA_MUNICIPIO_USERNAME ?? '',
         password: process.env.BONITA_MUNICIPIO_PASSWORD ?? '',

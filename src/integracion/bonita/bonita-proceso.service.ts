@@ -113,7 +113,7 @@ export class BonitaProcesoService {
     if (!this.habilitado) return;
 
     const { nombre, actor } = TAREAS.CARGAR_OFERTAS;
-    const tarea = await this.client.buscarTareaPendiente(actor, caseId, nombre);
+    const tarea = await this.client.buscarTareaPendiente(caseId, nombre);
 
     if (!tarea) {
       this.logger.log(`Caso ${caseId}: convocatoria cerrada por el temporizador de Bonita`);
@@ -142,7 +142,6 @@ export class BonitaProcesoService {
     if (this.procesoId) return this.procesoId;
 
     const proceso = await this.client.buscarProceso(
-      INICIADOR,
       this.processName,
       this.processVersion,
     );
@@ -165,7 +164,7 @@ export class BonitaProcesoService {
     { nombre, actor }: Tarea,
     contrato: Record<string, unknown> = {},
   ): Promise<void> {
-    const tarea = await this.esperarTarea(actor, caseId, nombre);
+    const tarea = await this.esperarTarea(caseId, nombre);
     await this.client.ejecutarTarea(actor, tarea.id, contrato);
   }
 
@@ -175,12 +174,11 @@ export class BonitaProcesoService {
    * existir todavia. Se sondea un rato corto antes de darla por perdida.
    */
   private async esperarTarea(
-    actor: ActorBonita,
     caseId: string,
     nombre: string,
   ): Promise<BonitaTarea> {
     for (let intento = 1; intento <= ESPERA_TAREA.intentos; intento++) {
-      const tarea = await this.client.buscarTareaPendiente(actor, caseId, nombre);
+      const tarea = await this.client.buscarTareaPendiente(caseId, nombre);
       if (tarea) return tarea;
       await new Promise((resolve) => setTimeout(resolve, ESPERA_TAREA.intervaloMs));
     }
@@ -193,7 +191,7 @@ export class BonitaProcesoService {
 
   private async borrarCaso(caseId: string): Promise<void> {
     try {
-      await this.client.borrarCaso(INICIADOR, caseId);
+      await this.client.borrarCaso(caseId);
     } catch (error) {
       // Si ya no existe (termino, o alguien lo borro desde el portal), no hay
       // nada que limpiar.
