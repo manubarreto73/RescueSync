@@ -68,15 +68,45 @@ export class LoteRepository {
    * groupBy con _sum es el GROUP BY ... SUM() de SQL: mucho mas barato que
    * traer todas las lineas y sumarlas en memoria.
    */
-  async coberturaPorLote(
+  coberturaPorLote(emergenciaId: number, tx?: PrismaTransaction): Promise<Map<number, number>> {
+    return this.sumaPorLote(
+      emergenciaId,
+      [EstadoOferta.ADJUDICADA, EstadoOferta.FINALIZADA],
+      tx,
+    );
+  }
+
+  /**
+   * Cuanto ofrecio la red para cada lote: es lo que se mira al vencer el
+   * temporizador para saber si la convocatoria cubrio lo pedido.
+   *
+   * No cuenta borradores (nunca se presentaron) ni ofertas retiradas. Si cuenta
+   * las que despues no se adjudicaron, porque igual fueron ofrecidas.
+   */
+  ofertadoPorLote(emergenciaId: number, tx?: PrismaTransaction): Promise<Map<number, number>> {
+    return this.sumaPorLote(
+      emergenciaId,
+      [
+        EstadoOferta.PRESENTADA,
+        EstadoOferta.VALIDADA,
+        EstadoOferta.ADJUDICADA,
+        EstadoOferta.NO_ADJUDICADA,
+        EstadoOferta.FINALIZADA,
+      ],
+      tx,
+    );
+  }
+
+  private async sumaPorLote(
     emergenciaId: number,
+    estados: EstadoOferta[],
     tx?: PrismaTransaction,
   ): Promise<Map<number, number>> {
     const filas = await this.db(tx).ofertaLinea.groupBy({
       by: ['loteId'],
       where: {
         lote: { emergenciaId },
-        oferta: { estado: { in: [EstadoOferta.ADJUDICADA, EstadoOferta.FINALIZADA] } },
+        oferta: { estado: { in: estados } },
       },
       _sum: { cantidad: true },
     });

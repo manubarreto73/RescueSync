@@ -14,16 +14,18 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { Rol } from '../../../common/enums/rol.enum';
 import { AuthenticatedUser } from '../../../security/interfaces/jwt-payload.interface';
+import { CompromisosResponseDto } from '../dtos/compromisos-response.dto';
 import { ValidarOfertasDto } from '../dtos/request/validar-ofertas.dto';
 import { OfertasService } from '../services/ofertas.service';
 
 /**
- * Los dos endpoints que consume Bonita, en su propio controller porque
- * cuelgan de la emergencia y no de la oferta.
+ * Los endpoints que consume Bonita, en su propio controller porque cuelgan de
+ * la emergencia y no de la oferta.
  *
  * Es el mecanismo que fija la consigna: Bonita inicia la comunicacion. Al
  * vencer el temporizador hace un GET del consolidado, se lo manda al Sistema
- * Nacional, y devuelve los resultados por POST.
+ * Nacional, y devuelve los resultados por POST. Tras la adjudicacion hace lo
+ * mismo con los compromisos.
  */
 @ApiTags('Ofertas')
 @ApiBearerAuth('access-token')
@@ -43,6 +45,21 @@ export class OfertasDeEmergenciaController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.ofertasService.consolidadoParaBonita(emergenciaId, user);
+  }
+
+  @Get('compromisos')
+  @Roles(Rol.CENTRO_COORDINADOR, Rol.AUDITOR)
+  @AccesoServicio()
+  @ApiOperation({
+    summary: 'Ofertas adjudicadas, listas para comprometerlas en el Sistema Nacional (eslabon 6)',
+  })
+  @ApiResponse({ status: 200, type: CompromisosResponseDto })
+  @ApiResponse({ status: 400, description: 'Sin ofertas adjudicadas, o una ONG sin codigo nacional' })
+  compromisos(
+    @Param('emergenciaId', ParseIntPipe) emergenciaId: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CompromisosResponseDto> {
+    return this.ofertasService.compromisosParaBonita(emergenciaId, user);
   }
 
   @Post('validar')

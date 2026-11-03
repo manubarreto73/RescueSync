@@ -264,6 +264,35 @@ Dentro de Docker, anteponer `docker compose exec api`.
 | POST | `/logout` | autenticado | Manda el access token a la blacklist y borra el refresh |
 | GET | `/me` | autenticado | Datos del usuario del token |
 
+### Notificaciones (`/api/v1/notificaciones`)
+
+Avisos dentro de la app para las ONGs y organismos de rescate. Se generan al publicar o
+reabrir una convocatoria (a toda la red) y al adjudicar o no adjudicar una oferta (a cada
+integrante del consorcio).
+
+| Metodo | Ruta | Rol requerido |
+|---|---|---|
+| GET | `/` | REPRESENTANTE_ONG (las de su organizacion) |
+| POST | `/:id/leida` | REPRESENTANTE_ONG |
+
+### Inventario (`/api/v1/inventario`)
+
+El inventario vive en el Sistema Nacional, que es donde se bloquean los recursos al
+adjudicar. Estos endpoints reenvian el pedido con la cuenta de servicio de la app web
+(`SISTEMA_NACIONAL_*` en el `.env`) y el `codigoNacional` de la organizacion del usuario.
+
+| Metodo | Ruta | Rol requerido |
+|---|---|---|
+| GET | `/` | REPRESENTANTE_ONG |
+| PUT | `/` | REPRESENTANTE_ONG |
+
+### Indicadores (`/api/v1/indicadores?mes=AAAA-MM`)
+
+Para el tablero del AUDITOR. Combina datos propios (suministros movilizados en el mes,
+porcentaje de ofertas adjudicadas en consorcio, proyectos por estado) con los tiempos
+promedio por etapa que se leen de `/API/bpm/archivedHumanTask` de Bonita. Con Bonita apagado
+o inaccesible, `tiemposPorEtapa.disponible` es `false` y el resto se sigue devolviendo.
+
 ### Lotes (`/api/v1/emergencias/:emergenciaId/lotes`)
 
 Los "Lotes de Necesidades" del eslabon 2: una necesidad concreta y cuantificada, del
@@ -272,6 +301,7 @@ estilo "5 paramedicos" o "1000 raciones". Es la unidad sobre la que ofertan las 
 | Metodo | Ruta | Rol requerido |
 |---|---|---|
 | GET | `/` | quien pueda ver la emergencia |
+| GET | `/cobertura` | CENTRO_COORDINADOR, AUDITOR y Bonita |
 | POST | `/` | CENTRO_COORDINADOR |
 | PUT | `/:id` | CENTRO_COORDINADOR |
 | DELETE | `/:id` | CENTRO_COORDINADOR |
@@ -291,6 +321,13 @@ con un `GROUP BY ... SUM()` sobre las lineas de las ofertas adjudicadas. Un cont
 denormalizado se desincronizaria en cuanto alguien retire una oferta, y un numero de
 cobertura equivocado hace que el Coordinador decida mal.
 
+`GET /cobertura` es otra medida: compara lo **ofertado** con lo requerido y responde `cubierta`,
+`lotesCubiertos` y el `faltante` de cada lote. Con eso Bonita elige el camino al vencer el
+temporizador y el Coordinador decide si reabre, reformula o continúa con cobertura parcial.
+Cuenta las ofertas presentadas o posteriores, sin borradores ni retiradas. Solo acceden el
+Coordinador, el Auditor y Bonita: la ONG no puede saber cuánto ofertaron las demás durante la
+ventana, por eso el dato no está en el listado de lotes.
+
 ### Ofertas (`/api/v1/ofertas`)
 
 | Metodo | Ruta | Rol requerido |
@@ -306,12 +343,13 @@ cobertura equivocado hace que el Coordinador decida mal.
 | POST | `/:id/rechazar` | OPERADOR_MUNICIPAL duenio |
 | POST | `/:id/finalizar-participacion` | cada ONG del consorcio |
 
-Y los dos que consume Bonita, que cuelgan de la emergencia:
+Y los que consume Bonita, que cuelgan de la emergencia:
 
 | Metodo | Ruta | Rol requerido |
 |---|---|---|
 | GET | `/emergencias/:id/ofertas/consolidado` | CENTRO_COORDINADOR, AUDITOR |
 | POST | `/emergencias/:id/ofertas/validar` | CENTRO_COORDINADOR |
+| GET | `/emergencias/:id/ofertas/compromisos` | CENTRO_COORDINADOR, AUDITOR |
 
 ### Consorcios y ofertas parciales
 
@@ -388,7 +426,7 @@ La raiz del proceso. Su `estado` es el reflejo local del avance de la instancia 
 | POST | `/:id/publicar-convocatoria` | CENTRO_COORDINADOR |
 | POST | `/:id/cerrar-convocatoria` | CENTRO_COORDINADOR (y Bonita al vencer el timer) |
 | POST | `/:id/reabrir-convocatoria` | CENTRO_COORDINADOR |
-| POST | `/:id/habilitar-adjudicacion` | CENTRO_COORDINADOR |
+| POST | `/:id/habilitar-adjudicacion` | CENTRO_COORDINADOR y Bonita (con cobertura completa) |
 | POST | `/:id/adjudicar` | OPERADOR_MUNICIPAL duenio |
 | POST | `/:id/finalizar` | CENTRO_COORDINADOR |
 | POST | `/:id/cancelar` | OPERADOR_MUNICIPAL duenio o CENTRO_COORDINADOR |
@@ -574,8 +612,9 @@ docker exec rescuesync-redis sh -c "redis-cli --scan --pattern '{*' | xargs -r r
 
 La coleccion esta en `postman/RescueSync API.postman_collection.json`.
 
-En Postman: **Import**, elegir el archivo, y queda una coleccion con los requests
-agrupados en Auth, Usuarios e Infraestructura. El request **Login** guarda
+En Postman: **Import**, elegir el archivo, y queda una coleccion con los requests agrupados
+por dominio: Auth, Organizaciones, Usuarios, Emergencias, Lotes, Ofertas, Notificaciones,
+Inventario, Indicadores e Infraestructura. El request **Login** guarda
 automaticamente el `accessToken` y el `refreshToken` en variables de coleccion, asi que
 el resto de los requests ya salen autenticados sin copiar y pegar nada.
 
@@ -637,6 +676,9 @@ src/
     ├── emergencias/            # alta, ciclo de vida y alcance por filas
     ├── lotes/                  # desglose de necesidades y cobertura
     ├── ofertas/                # consorcios, versionado e integracion con Bonita
+    ├── notificaciones/         # avisos a las ONGs
+    ├── inventario/             # reenvia al Sistema Nacional
+    ├── indicadores/            # datos del tablero
     └── auth/                   # login, refresh, logout, bloqueo de IP
 ```
 
@@ -686,7 +728,7 @@ parametro y usan `tx ?? this.prisma`.
 
 ## Tests
 
-268 tests e2e sobre auth, usuarios, organizaciones, emergencias, lotes y ofertas. "e2e" significa que entran por HTTP y salen por la
+Tests e2e sobre auth, usuarios, organizaciones, emergencias, lotes, ofertas, notificaciones, inventario e indicadores. "e2e" significa que entran por HTTP y salen por la
 base: no hay mocks, se prueba la misma app que se despliega.
 
 ```bash
@@ -738,6 +780,7 @@ test/
 ├── emergencias.e2e-spec.ts     # alcance por filas, maquina de estados, transiciones
 ├── lotes.e2e-spec.ts           # desglose, estados editables, ruta anidada
 ├── ofertas.e2e-spec.ts         # consorcios, versionado, ciclo completo
+├── entrega-final.e2e-spec.ts   # notificaciones, inventario, consolidado, indicadores
 └── throttler.e2e-spec.ts       # el unico con rate limiting encendido
 ```
 
@@ -772,15 +815,19 @@ con una sesion por actor (`/loginservice` + cookie `JSESSIONID` + header `X-Boni
 | Accion en la API | Que pasa en Bonita | Usuario |
 |---|---|---|
 | `POST /emergencias` | instancia el proceso y completa **Registrar emergencia** con `{ id }` (queda en la variable de proceso `id`) | Operador municipal |
-| `POST /:id/publicar-convocatoria` | completa **Generar lotes**: el caso queda en **Cargar / editar ofertas** con el timer corriendo | Coordinador regional |
-| `POST /:id/cerrar-convocatoria` (Coordinador, antes del timer) | completa **Cargar / editar ofertas**: el caso termina sin pasar por el conector | Representante de ONG |
+| `POST /:id/publicar-convocatoria` | completa **Generar lotes** con `{ fechaCierre }` en ISO 8601: el caso queda en **Cargar / editar ofertas** con el timer corriendo hasta esa fecha | Coordinador regional |
+| `POST /:id/cerrar-convocatoria` (Coordinador, antes del timer) | completa **Cargar / editar ofertas**: el caso sigue por la lectura de cobertura, sin pasar por el conector de cierre | Representante de ONG |
 | `POST /:id/cerrar-convocatoria` (conector, al vencer el timer) | nada: la tarea ya no esta pendiente | — |
-| `POST /:id/reabrir-convocatoria` | el caso anterior termino, se arranca uno nuevo hasta el timer | los tres |
+| `POST /:id/reabrir-convocatoria` | si esta pendiente, completa **Decidir curso de accion** con `decision = REABRIR`; despues arranca un caso nuevo hasta el timer | los tres |
+| `POST /:id/habilitar-adjudicacion` | si esta pendiente, completa **Decidir curso de accion** con `decision = CONTINUAR` | Coordinador regional |
+| `POST /:id/adjudicar` | completa **Adjudicar ofertas** | Operador municipal |
+| `POST /:id/finalizar` | completa **Cierre del proyecto** | Coordinador regional |
 | `POST /:id/cancelar` | borra el caso | Operador municipal |
 
 Si Bonita falla en el alta, la emergencia se guarda igual y el caso se crea al publicar. Si
 falla al publicar, la publicacion falla con 503: sin caso no hay temporizador que cierre la
-ventana.
+ventana. Adjudicar y finalizar tambien responden 503 y no cambian el estado: sin esas tareas
+Bonita no compromete ni libera los recursos.
 
 ### Bonita -> API (conectores)
 
@@ -788,8 +835,19 @@ Los conectores se autentican con el header `X-Service-Token: <BONITA_CALLBACK_TO
 solo vale en los endpoints marcados con `@AccesoServicio()`:
 
 - `POST /api/v1/emergencias/:id/cerrar-convocatoria`
+- `GET /api/v1/emergencias/:id/lotes/cobertura`
+- `POST /api/v1/emergencias/:id/habilitar-adjudicacion`
 - `GET /api/v1/emergencias/:id/ofertas/consolidado`
 - `POST /api/v1/emergencias/:id/ofertas/validar`
+- `GET /api/v1/emergencias/:id/ofertas/compromisos`, con el cuerpo listo para
+  `POST /proyectos/:ref/compromisos` del Sistema Nacional
+
+El temporizador de **Cargar / editar ofertas** vence en la fecha que llega en el contrato de
+**Generar lotes**: guardarla en una variable de proceso `fechaCierre` y usar como condicion
+`Date.from(java.time.Instant.parse(fechaCierre))`.
+
+Si el Sistema Nacional responde 409 al comprometer, la emergencia ya esta en `EN_EJECUCION` en
+la aplicacion y no vuelve atras sola: el camino alternativo se resuelve en el diagrama.
 
 En el conector REST de **Step1** la URL tiene que llevar el esquema
 (`'http://localhost:3000/api/v1/emergencias/' + id + '/cerrar-convocatoria'`) y el header

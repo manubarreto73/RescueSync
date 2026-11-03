@@ -157,8 +157,14 @@ export class EmergenciasController {
     return this.emergenciasService.reabrirConvocatoria(id, dto, user);
   }
 
+  /**
+   * La llama el Coordinador al decidir continuar con cobertura parcial, o el
+   * conector de Bonita cuando lo ofertado cubrió todos los lotes y no hay nada
+   * que decidir.
+   */
   @Post(':id/habilitar-adjudicacion')
   @Roles(Rol.CENTRO_COORDINADOR)
+  @AccesoServicio()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Habilita al municipio a elegir entre las ofertas validadas' })
   habilitarAdjudicacion(

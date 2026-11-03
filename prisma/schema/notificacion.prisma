@@ -1,0 +1,31 @@
+/// Aviso dentro de la aplicacion para una ONG u organismo de rescate.
+///
+/// Es de la organizacion y no del usuario: cualquiera de sus representantes
+/// tiene que poder verlo.
+model Notificacion {
+  id Int @id @default(autoincrement())
+
+  organizacionId Int          @map("organizacion_id")
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id])
+
+  emergenciaId Int        @map("emergencia_id")
+  emergencia   Emergencia @relation(fields: [emergenciaId], references: [id], onDelete: Cascade)
+
+  tipo    TipoNotificacion
+  mensaje String           @db.VarChar(500)
+  leida   Boolean          @default(false)
+
+  fechaCreacion DateTime @default(now()) @map("fecha_creacion")
+
+  @@index([organizacionId, leida])
+  @@map("notificaciones")
+}
+
+enum TipoNotificacion {
+  /// Eslabon 3: se abrio una convocatoria en la red.
+  CONVOCATORIA_ABIERTA
+  /// Eslabon 5: la propuesta fue seleccionada.
+  OFERTA_ADJUDICADA
+  /// Eslabon 5: la propuesta no fue seleccionada.
+  OFERTA_NO_ADJUDICADA
+}

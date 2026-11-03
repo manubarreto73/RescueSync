@@ -630,6 +630,133 @@ describe('Ofertas (e2e)', () => {
 
   // ------------------------------------------------------------------
 
+  describe('Cobertura ofertada al vencer el temporizador', () => {
+    const cobertura = (emergenciaId: number, token: string) =>
+      request(ctx.app.getHttpServer())
+        .get(`${BASE}/emergencias/${emergenciaId}/lotes/cobertura`)
+        .set('Authorization', comoUsuario(token));
+
+    /** Oferta de la ONG sobre un lote, sin pasar por la ventana. */
+    const sembrarOferta = (
+      emergenciaId: number,
+      loteId: number,
+      cantidad: number,
+      estado: EstadoOferta,
+    ) =>
+      ctx.prisma.oferta.create({
+        data: {
+          emergenciaId,
+          estado,
+          organizacionLiderId: ORG_ONG,
+          presentadaPorId: 3,
+          participantes: { create: { organizacionId: ORG_ONG, esLider: true } },
+          lineas: { create: { loteId, organizacionId: ORG_ONG, cantidad } },
+        },
+      });
+
+    it('suma las ofertas parciales y detecta lo que falta', async () => {
+      const { emergencia, lotePersonal, loteAlimentos } = await sembrarConvocatoria();
+      await sembrarOferta(emergencia.id, lotePersonal.id, 2, EstadoOferta.PRESENTADA);
+      await sembrarOferta(emergencia.id, lotePersonal.id, 1, EstadoOferta.VALIDADA);
+      await sembrarOferta(emergencia.id, loteAlimentos.id, 1000, EstadoOferta.PRESENTADA);
+
+      const res = await cobertura(emergencia.id, tokenCoordinador).expect(200);
+
+      expect(res.body).toMatchObject({
+        emergenciaId: emergencia.id,
+        cubierta: false,
+        totalLotes: 2,
+        lotesCubiertos: 1,
+      });
+      expect(res.body.lotes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            loteId: lotePersonal.id,
+            cantidadRequerida: 5,
+            cantidadOfertada: 3,
+            faltante: 2,
+            cubierto: false,
+          }),
+          expect.objectContaining({ loteId: loteAlimentos.id, faltante: 0, cubierto: true }),
+        ]),
+      );
+    });
+
+    it('esta cubierta cuando todos los lotes llegan, y ofertar de mas no da faltante negativo', async () => {
+      const { emergencia, lotePersonal, loteAlimentos } = await sembrarConvocatoria();
+      await sembrarOferta(emergencia.id, lotePersonal.id, 9, EstadoOferta.PRESENTADA);
+      await sembrarOferta(emergencia.id, loteAlimentos.id, 1000, EstadoOferta.PRESENTADA);
+
+      const res = await cobertura(emergencia.id, tokenAuditor).expect(200);
+
+      expect(res.body.cubierta).toBe(true);
+      expect(
+        res.body.lotes.find((l: { loteId: number }) => l.loteId === lotePersonal.id).faltante,
+      ).toBe(0);
+    });
+
+    it('no cuenta borradores ni ofertas retiradas', async () => {
+      const { emergencia, lotePersonal } = await sembrarConvocatoria();
+      await sembrarOferta(emergencia.id, lotePersonal.id, 5, EstadoOferta.BORRADOR);
+      await sembrarOferta(emergencia.id, lotePersonal.id, 5, EstadoOferta.RETIRADA);
+
+      const res = await cobertura(emergencia.id, tokenCoordinador).expect(200);
+
+      expect(
+        res.body.lotes.find((l: { loteId: number }) => l.loteId === lotePersonal.id)
+          .cantidadOfertada,
+      ).toBe(0);
+    });
+
+    it('reformular el lote cambia el resultado', async () => {
+      const { emergencia, lotePersonal, loteAlimentos } = await sembrarConvocatoria(
+        EstadoEmergencia.CONVOCATORIA_CERRADA,
+      );
+      await sembrarOferta(emergencia.id, lotePersonal.id, 3, EstadoOferta.PRESENTADA);
+      await sembrarOferta(emergencia.id, loteAlimentos.id, 1000, EstadoOferta.PRESENTADA);
+
+      await request(ctx.app.getHttpServer())
+        .put(`${BASE}/emergencias/${emergencia.id}/lotes/${lotePersonal.id}`)
+        .set('Authorization', comoUsuario(tokenCoordinador))
+        .send({
+          categoria: lotePersonal.categoria,
+          descripcion: lotePersonal.descripcion,
+          cantidadRequerida: 3,
+          unidad: lotePersonal.unidad,
+        })
+        .expect(200);
+
+      const res = await cobertura(emergencia.id, tokenCoordinador).expect(200);
+      expect(res.body.cubierta).toBe(true);
+    });
+
+    /** Si una ONG lo viera, sabria cuanto ofertaron las demas durante la ventana. */
+    it.each([
+      ['ong', () => tokenOng],
+      ['municipio', () => tokenMunicipio],
+    ])('un %s no accede', async (_perfil, token) => {
+      const { emergencia } = await sembrarConvocatoria();
+      await cobertura(emergencia.id, token()).expect(403);
+    });
+
+    it('el listado de lotes no expone lo ofertado', async () => {
+      const { emergencia, lotePersonal } = await sembrarConvocatoria();
+      await sembrarOferta(emergencia.id, lotePersonal.id, 3, EstadoOferta.PRESENTADA);
+
+      const res = await request(ctx.app.getHttpServer())
+        .get(`${BASE}/emergencias/${emergencia.id}/lotes`)
+        .set('Authorization', comoUsuario(tokenOng))
+        .expect(200);
+
+      expect(res.body[0].cantidadOfertada).toBeUndefined();
+      expect(res.body[0].cantidadCubierta).toBe(0);
+    });
+
+    it('devuelve 404 si la emergencia no existe', async () => {
+      await cobertura(99999, tokenCoordinador).expect(404);
+    });
+  });
+
   describe('Integracion con lotes', () => {
     it('no deja borrar un lote que ya tiene ofertas', async () => {
       const { emergencia, lotePersonal } = await sembrarConvocatoria();

@@ -15,7 +15,7 @@ export type OfertaConRelaciones = Oferta & {
     organizacion: Pick<Organizacion, 'id' | 'nombre' | 'codigoNacional'>;
   })[];
   lineas: (OfertaLinea & {
-    lote: Pick<Lote, 'id' | 'descripcion' | 'unidad' | 'cantidadRequerida'>;
+    lote: Pick<Lote, 'id' | 'descripcion' | 'categoria' | 'unidad' | 'cantidadRequerida'>;
     organizacion: Pick<Organizacion, 'id' | 'nombre'>;
   })[];
 };
@@ -40,6 +40,17 @@ class LineaDto {
   @ApiProperty() organizacionNombre!: string;
   @ApiProperty({ enum: CaracterOferta }) caracter!: CaracterOferta;
   @ApiPropertyOptional({ nullable: true }) perfilCompetencia!: string | null;
+}
+
+/** Una entrada del historial de ediciones de la oferta. */
+export class OfertaVersionResponseDto {
+  @ApiProperty() id!: number;
+  @ApiProperty() version!: number;
+  @ApiProperty({ type: 'object', additionalProperties: true })
+  snapshot!: unknown;
+  @ApiProperty() fechaCambio!: Date;
+  @ApiProperty({ type: 'object', additionalProperties: true })
+  modificadaPor!: { id: number; nombreCompleto: string };
 }
 
 export class OfertaResponseDto {

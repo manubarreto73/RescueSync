@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { BonitaModule } from '../../integracion/bonita/bonita.module';
 import { LotesModule } from '../lotes/lotes.module';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 import { EmergenciasController } from './controller/emergencias.controller';
 import { EmergenciaRepository } from './repositories/emergencia.repository';
 import { EmergenciasService } from './services/emergencias.service';
@@ -11,7 +12,7 @@ import { EmergenciasService } from './services/emergencias.service';
  * estado de la emergencia.
  */
 @Module({
-  imports: [forwardRef(() => LotesModule), BonitaModule],
+  imports: [forwardRef(() => LotesModule), BonitaModule, NotificacionesModule],
   controllers: [EmergenciasController],
   providers: [EmergenciasService, EmergenciaRepository],
   exports: [EmergenciasService],

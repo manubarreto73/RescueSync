@@ -5,7 +5,10 @@ import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { AuthModule } from './dominio/auth/auth.module';
 import { EmergenciasModule } from './dominio/emergencias/emergencias.module';
+import { IndicadoresModule } from './dominio/indicadores/indicadores.module';
+import { InventarioModule } from './dominio/inventario/inventario.module';
 import { LotesModule } from './dominio/lotes/lotes.module';
+import { NotificacionesModule } from './dominio/notificaciones/notificaciones.module';
 import { OfertasModule } from './dominio/ofertas/ofertas.module';
 import { OrganizacionesModule } from './dominio/organizaciones/organizaciones.module';
 import { UsuariosModule } from './dominio/usuarios/usuarios.module';
@@ -50,6 +53,9 @@ import { SecurityModule } from './security/security.module';
     EmergenciasModule,
     LotesModule,
     OfertasModule,
+    NotificacionesModule,
+    InventarioModule,
+    IndicadoresModule,
   ],
 })
 export class AppModule {}

@@ -80,7 +80,7 @@ export async function limpiarBase(prisma: PrismaService): Promise<void> {
   // alguna deja de tener foreign key hacia las otras, el CASCADE dejaria de
   // limpiarla en silencio y los tests empezarian a contaminarse entre si.
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "oferta_versiones", "oferta_lineas", "oferta_participantes", "ofertas", ' +
+    'TRUNCATE TABLE "notificaciones", "oferta_versiones","oferta_lineas", "oferta_participantes", "ofertas", ' +
       '"lotes", "emergencias", "usuarios", "organizaciones" RESTART IDENTITY CASCADE',
   );
 }

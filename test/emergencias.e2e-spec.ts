@@ -641,6 +641,27 @@ describe('Emergencias (e2e)', () => {
       expect(res.body.emergenciaId).toBe(emergencia.id);
     });
 
+    it('lee la cobertura ofertada para elegir el camino', async () => {
+      const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_CERRADA);
+
+      const res = await comoBonita('get', `/emergencias/${emergencia.id}/lotes/cobertura`).expect(
+        200,
+      );
+
+      expect(res.body.emergenciaId).toBe(emergencia.id);
+    });
+
+    it('con cobertura completa habilita la adjudicacion', async () => {
+      const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_CERRADA);
+
+      const res = await comoBonita(
+        'post',
+        `/emergencias/${emergencia.id}/habilitar-adjudicacion`,
+      ).expect(200);
+
+      expect(res.body.estado).toBe(EstadoEmergencia.EN_ADJUDICACION);
+    });
+
     it('rechaza un token invalido con 401', async () => {
       const emergencia = await sembrarEmergencia(EstadoEmergencia.CONVOCATORIA_ABIERTA);
 

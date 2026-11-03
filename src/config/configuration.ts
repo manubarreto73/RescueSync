@@ -57,6 +57,13 @@ export default () => ({
     blockDurationMinutes: parseInt(process.env.LOGIN_BLOCK_DURATION_MIN ?? '30', 10),
   },
 
+  sistemaNacional: {
+    url: (process.env.SISTEMA_NACIONAL_URL ?? 'http://localhost:3001/api/v1').replace(/\/+$/, ''),
+    email: process.env.SISTEMA_NACIONAL_EMAIL ?? 'app-web@rescuesync.ar',
+    password: process.env.SISTEMA_NACIONAL_PASSWORD ?? '',
+    timeoutMs: parseInt(process.env.SISTEMA_NACIONAL_TIMEOUT_MS ?? '10000', 10),
+  },
+
   bonita: {
     // Apagado salvo que se prenda explicitamente: los tests e2e y quien
     // levante la API sin el motor no tienen por que depender de el.

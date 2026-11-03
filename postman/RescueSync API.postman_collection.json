@@ -79,6 +79,10 @@
       "key": "lineaId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "notificacionId",
+      "value": ""
     }
   ],
   "item": [
@@ -1620,6 +1624,42 @@
           }
         },
         {
+          "name": "Cobertura ofertada (la lee Bonita al vencer el timer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('trae cubierta y el detalle', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.cubierta).to.be.a('boolean');",
+                  "  pm.expect(body.lotes).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/lotes/cobertura",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "lotes",
+                "cobertura"
+              ]
+            },
+            "description": "Requiere CENTRO_COORDINADOR o AUDITOR, o el header X-Service-Token que usa Bonita.\n\nCompara lo ofertado con lo requerido. Con `cubierta = false` el proceso va a la tarea del Coordinador. Las ONGs no acceden: no pueden saber cuanto ofertaron las demas."
+          }
+        },
+        {
           "name": "Reformular lote",
           "event": [
             {
@@ -2055,6 +2095,38 @@
           }
         },
         {
+          "name": "Compromisos para Bonita",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('una entrada por ONG', () => pm.expect(pm.response.json().compromisos).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emergencias/{{emergenciaId}}/ofertas/compromisos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "emergencias",
+                "{{emergenciaId}}",
+                "ofertas",
+                "compromisos"
+              ]
+            },
+            "description": "Requiere CENTRO_COORDINADOR o AUDITOR, o el header X-Service-Token que usa Bonita.\n\nOfertas adjudicadas agrupadas por ONG y categoria. Bonita reenvia la respuesta tal cual a POST /proyectos/:ref/compromisos del Sistema Nacional. Responde 400 si no hay ofertas adjudicadas o si una ONG no tiene codigo nacional."
+          }
+        },
+        {
           "name": "Rechazar oferta",
           "event": [
             {
@@ -2156,6 +2228,192 @@
               ]
             },
             "description": "La ONG da de baja su oferta, siempre dentro de la ventana de convocatoria.\n\nUna oferta retirada deja de aparecer en el consolidado que consulta Bonita."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notificaciones",
+      "description": "Requiere REPRESENTANTE_ONG: loguearse como ong@rescuesync.ar.",
+      "item": [
+        {
+          "name": "Mis notificaciones",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const lista = pm.response.json();",
+                  "if (lista.length) pm.collectionVariables.set('notificacionId', lista[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notificaciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notificaciones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Marcar como leida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('queda leida', () => pm.expect(pm.response.json().leida).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notificaciones/{{notificacionId}}/leida",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notificaciones",
+                "{{notificacionId}}",
+                "leida"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventario",
+      "description": "Requiere REPRESENTANTE_ONG y el Sistema Nacional levantado: el inventario vive ahi.",
+      "item": [
+        {
+          "name": "Ver mi inventario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('trae los recursos', () => pm.expect(pm.response.json().recursos).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventario",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventario"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Actualizar mi inventario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventario",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventario"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recursos\": [\n    {\n      \"categoria\": \"PERSONAL\",\n      \"unidad\": \"personas\",\n      \"cantidadTotal\": 20\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Indicadores",
+      "description": "Requiere AUDITOR: loguearse como auditor@rescuesync.ar.",
+      "item": [
+        {
+          "name": "Indicadores del mes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('trae las metricas', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('suministrosMovilizados');",
+                  "  pm.expect(body).to.have.property('consorcios');",
+                  "  pm.expect(body).to.have.property('tiemposPorEtapa');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/indicadores?mes=2026-11",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "indicadores"
+              ],
+              "query": [
+                {
+                  "key": "mes",
+                  "value": "2026-11"
+                }
+              ]
+            },
+            "description": "El parametro mes es opcional. `tiemposPorEtapa.disponible` es false si Bonita no responde."
           }
         }
       ]

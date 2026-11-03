@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CaracterOferta } from '@prisma/client';
+import { CaracterOferta, CategoriaRecurso, NivelGravedad } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -30,6 +31,32 @@ export class ResultadoLineaDto {
   @Length(3, 200)
   @IsOptional()
   perfilCompetencia?: string;
+
+  // Detalle informativo que agrega el Sistema Nacional en cada resultado. No
+  // se persiste: se declara solo para que Bonita pueda reenviar la respuesta
+  // de POST /validaciones tal cual, sin que forbidNonWhitelisted la rechace.
+
+  @ApiPropertyOptional({ enum: CategoriaRecurso, isArray: true })
+  @IsArray()
+  @IsEnum(CategoriaRecurso, { each: true })
+  @IsOptional()
+  capacidadesHabilitadas?: CategoriaRecurso[];
+
+  @ApiPropertyOptional({ enum: NivelGravedad, nullable: true })
+  @IsEnum(NivelGravedad)
+  @IsOptional()
+  nivelRiesgoPermitido?: NivelGravedad | null;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  disponible?: boolean;
+
+  @ApiPropertyOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  cantidadDisponible?: number;
 }
 
 /**

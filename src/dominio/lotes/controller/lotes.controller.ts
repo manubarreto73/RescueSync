@@ -11,10 +11,12 @@ import {
   Put,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AccesoServicio } from '../../../common/decorators/acceso-servicio.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { Rol } from '../../../common/enums/rol.enum';
 import { AuthenticatedUser } from '../../../security/interfaces/jwt-payload.interface';
+import { CoberturaOfertadaResponseDto } from '../dtos/cobertura-ofertada-response.dto';
 import { LoteResponseDto } from '../dtos/lote-response.dto';
 import { ChangeLoteDto } from '../dtos/request/change-lote.dto';
 import { RegisterLoteDto } from '../dtos/request/register-lote.dto';
@@ -43,6 +45,24 @@ export class LotesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<LoteResponseDto[]> {
     return this.lotesService.getByEmergencia(emergenciaId, user);
+  }
+
+  /**
+   * Lo consulta Bonita al vencer el temporizador para elegir el camino, y el
+   * Coordinador para decidir. Las ONGs no acceden: no pueden saber cuánto
+   * ofertaron las demás.
+   */
+  @Get('cobertura')
+  @Roles(Rol.CENTRO_COORDINADOR, Rol.AUDITOR)
+  @AccesoServicio()
+  @ApiOperation({ summary: 'Compara lo ofertado con lo requerido en cada lote' })
+  @ApiResponse({ status: 200, type: CoberturaOfertadaResponseDto })
+  @ApiResponse({ status: 404, description: 'La emergencia no existe' })
+  getCoberturaOfertada(
+    @Param('emergenciaId', ParseIntPipe) emergenciaId: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CoberturaOfertadaResponseDto> {
+    return this.lotesService.getCoberturaOfertada(emergenciaId, user);
   }
 
   @Post()

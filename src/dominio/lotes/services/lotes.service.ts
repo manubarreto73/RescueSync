@@ -4,6 +4,7 @@ import { BusinessException } from '../../../common/exceptions/business.exception
 import { ResourceNotFoundException } from '../../../common/exceptions/resource-not-found.exception';
 import { AuthenticatedUser } from '../../../security/interfaces/jwt-payload.interface';
 import { EmergenciasService } from '../../emergencias/services/emergencias.service';
+import { CoberturaOfertadaResponseDto } from '../dtos/cobertura-ofertada-response.dto';
 import { LoteResponseDto } from '../dtos/lote-response.dto';
 import { ChangeLoteDto } from '../dtos/request/change-lote.dto';
 import { RegisterLoteDto } from '../dtos/request/register-lote.dto';
@@ -50,6 +51,44 @@ export class LotesService {
     const cobertura = await this.loteRepository.coberturaPorLote(emergenciaId);
 
     return lotes.map((lote) => LoteResponseDto.from(lote, cobertura.get(lote.id) ?? 0));
+  }
+
+  async getCoberturaOfertada(
+    emergenciaId: number,
+    user: AuthenticatedUser,
+  ): Promise<CoberturaOfertadaResponseDto> {
+    const emergencia = await this.emergenciasService.findVisible(emergenciaId, user);
+
+    const [lotes, ofertado] = await Promise.all([
+      this.loteRepository.findByEmergencia(emergenciaId),
+      this.loteRepository.ofertadoPorLote(emergenciaId),
+    ]);
+
+    const detalle = lotes.map((lote) => {
+      const cantidadOfertada = ofertado.get(lote.id) ?? 0;
+      return {
+        loteId: lote.id,
+        categoria: lote.categoria,
+        descripcion: lote.descripcion,
+        unidad: lote.unidad,
+        cantidadRequerida: lote.cantidadRequerida,
+        cantidadOfertada,
+        faltante: Math.max(0, lote.cantidadRequerida - cantidadOfertada),
+        cubierto: cantidadOfertada >= lote.cantidadRequerida,
+      };
+    });
+
+    const lotesCubiertos = detalle.filter((lote) => lote.cubierto).length;
+
+    return {
+      emergenciaId,
+      estadoEmergencia: emergencia.estado,
+      // Sin lotes no hay nada cubierto: every() sobre una lista vacía daría true.
+      cubierta: detalle.length > 0 && lotesCubiertos === detalle.length,
+      totalLotes: detalle.length,
+      lotesCubiertos,
+      lotes: detalle,
+    };
   }
 
   async create(

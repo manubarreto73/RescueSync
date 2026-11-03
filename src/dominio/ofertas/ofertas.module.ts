@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EmergenciasModule } from '../emergencias/emergencias.module';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 import { OrganizacionesModule } from '../organizaciones/organizaciones.module';
 import { OfertasDeEmergenciaController } from './controller/ofertas-de-emergencia.controller';
 import { OfertasController } from './controller/ofertas.controller';
@@ -14,7 +15,7 @@ import { OfertasService } from './services/ofertas.service';
  * ninguna de las dos vuelve a depender de ofertas.
  */
 @Module({
-  imports: [EmergenciasModule, OrganizacionesModule],
+  imports: [EmergenciasModule, OrganizacionesModule, NotificacionesModule],
   controllers: [OfertasController, OfertasDeEmergenciaController],
   providers: [OfertasService, OfertaRepository],
   exports: [OfertasService],

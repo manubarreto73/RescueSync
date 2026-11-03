@@ -164,7 +164,7 @@ describe('BonitaProcesoService', () => {
     const servicio = crearServicio();
     const caseId = (await servicio.iniciarCaso(42))!;
 
-    await servicio.publicarConvocatoria(caseId);
+    await servicio.publicarConvocatoria(caseId, new Date('2026-11-05T18:00:00.000Z'));
 
     expect(bonita.ejecutadas.map((e) => [e.tarea, e.usuario])).toEqual([
       ['Registrar emergencia', 'april.sanchez'],
@@ -172,11 +172,83 @@ describe('BonitaProcesoService', () => {
     ]);
   });
 
+  it('le pasa al temporizador la fecha de cierre que eligio el coordinador', async () => {
+    const bonita = motor();
+    const servicio = crearServicio();
+    const caseId = (await servicio.iniciarCaso(42))!;
+
+    await servicio.publicarConvocatoria(caseId, new Date('2026-11-05T18:00:00.000Z'));
+
+    expect(bonita.ejecutadas[1].contrato).toEqual({ fechaCierre: '2026-11-05T18:00:00.000Z' });
+  });
+
+  describe('adjudicacion y cierre del proyecto', () => {
+    /** Motor parado en una tarea cualquiera del final del proceso. */
+    function motorEn(nombre: string | null) {
+      const ejecuciones: { usuario?: string }[] = [];
+
+      responder = (llamada) => {
+        const ruta = llamada.url.pathname.replace('/bonita', '');
+
+        if (ruta === '/loginservice') {
+          const usuario = new URLSearchParams(llamada.body).get('username')!;
+          return respuesta(204, undefined, [
+            `JSESSIONID=${usuario}; Path=/bonita; HttpOnly`,
+            `X-Bonita-API-Token=tok-${usuario}; Path=/bonita`,
+          ]);
+        }
+
+        if (ruta === '/API/bpm/humanTask') {
+          const pedida = llamada.url.searchParams
+            .getAll('f')
+            .find((f) => f.startsWith('name='))
+            ?.slice(5);
+          return respuesta(200, pedida === nombre ? [{ id: '8', name: nombre, state: 'ready' }] : []);
+        }
+
+        if (ruta === '/API/bpm/userTask/8/execution') {
+          ejecuciones.push({ usuario: usuarioDe(llamada) });
+          return respuesta(204);
+        }
+
+        return respuesta(404);
+      };
+
+      return ejecuciones;
+    }
+
+    it('el municipio completa "Adjudicar ofertas"', async () => {
+      const ejecuciones = motorEn('Adjudicar ofertas');
+
+      await crearServicio().adjudicar('1001');
+
+      expect(ejecuciones).toEqual([{ usuario: 'april.sanchez' }]);
+    });
+
+    it('el coordinador completa "Cierre del proyecto"', async () => {
+      const ejecuciones = motorEn('Cierre del proyecto');
+
+      await crearServicio().finalizarProyecto('1001');
+
+      expect(ejecuciones).toEqual([{ usuario: 'anthony.nichols' }]);
+    });
+
+    it('si la tarea no aparece falla con 503: los recursos no pueden quedar sin comprometer', async () => {
+      jest.spyOn(global, 'setTimeout').mockImplementation(((fn: () => void) => {
+        fn();
+        return 0;
+      }) as never);
+      motorEn(null);
+
+      await expect(crearServicio().adjudicar('1001')).rejects.toMatchObject({ status: 503 });
+    });
+  });
+
   it('cerrar antes del timer completa la tarea de la ONG; despues del timer no toca el motor', async () => {
     const bonita = motor();
     const servicio = crearServicio();
     const caseId = (await servicio.iniciarCaso(42))!;
-    await servicio.publicarConvocatoria(caseId);
+    await servicio.publicarConvocatoria(caseId, new Date('2026-11-05T18:00:00.000Z'));
 
     await servicio.cerrarConvocatoria(caseId);
     expect(bonita.ejecutadas[2]).toMatchObject({
@@ -187,6 +259,72 @@ describe('BonitaProcesoService', () => {
     bonita.vencerTimer();
     await servicio.cerrarConvocatoria(caseId);
     expect(bonita.ejecutadas).toHaveLength(3);
+  });
+
+  describe('decision del Coordinador', () => {
+    /** Motor parado en la tarea de decision, como tras vencer sin cobertura. */
+    function motorEnDecision(estaPendiente: () => boolean) {
+      const ejecuciones: { usuario?: string; contrato: unknown }[] = [];
+
+      responder = (llamada) => {
+        const ruta = llamada.url.pathname.replace('/bonita', '');
+
+        if (ruta === '/loginservice') {
+          const usuario = new URLSearchParams(llamada.body).get('username')!;
+          return respuesta(204, undefined, [
+            `JSESSIONID=${usuario}; Path=/bonita; HttpOnly`,
+            `X-Bonita-API-Token=tok-${usuario}; Path=/bonita`,
+          ]);
+        }
+
+        if (ruta === '/API/bpm/humanTask') {
+          const pideDecision = llamada.url.searchParams
+            .getAll('f')
+            .includes(`name=${TAREAS.DECIDIR_CURSO.nombre}`);
+          return respuesta(
+            200,
+            pideDecision && estaPendiente()
+              ? [{ id: '9', name: TAREAS.DECIDIR_CURSO.nombre, state: 'ready' }]
+              : [],
+          );
+        }
+
+        if (ruta === '/API/bpm/userTask/9/execution') {
+          ejecuciones.push({ usuario: usuarioDe(llamada), contrato: JSON.parse(llamada.body!) });
+          return respuesta(204);
+        }
+
+        return respuesta(404);
+      };
+
+      return ejecuciones;
+    }
+
+    it('el coordinador completa la tarea con lo que eligio', async () => {
+      const ejecuciones = motorEnDecision(() => true);
+
+      await crearServicio().registrarDecision('1001', 'CONTINUAR');
+
+      expect(ejecuciones).toEqual([
+        { usuario: 'anthony.nichols', contrato: { decision: 'CONTINUAR' } },
+      ]);
+    });
+
+    it('con cobertura completa la tarea no existe y no toca el motor', async () => {
+      const ejecuciones = motorEnDecision(() => false);
+
+      await crearServicio().registrarDecision('1001', 'CONTINUAR');
+
+      expect(ejecuciones).toHaveLength(0);
+    });
+
+    it('con la integracion apagada no hace ningun request', async () => {
+      motorEnDecision(() => true);
+
+      await crearServicio({ 'bonita.enabled': false }).registrarDecision('1001', 'REABRIR');
+
+      expect(llamadas).toHaveLength(0);
+    });
   });
 
   it('reabre la sesion una vez si Bonita responde 401', async () => {
@@ -206,8 +344,10 @@ describe('BonitaProcesoService', () => {
     const servicio = crearServicio({ 'bonita.enabled': false });
 
     expect(await servicio.iniciarCaso(42)).toBeNull();
-    await servicio.publicarConvocatoria('1');
+    await servicio.publicarConvocatoria('1', new Date());
     await servicio.cerrarConvocatoria('1');
+    await servicio.adjudicar('1');
+    await servicio.finalizarProyecto('1');
     await servicio.cancelarCaso('1');
 
     expect(llamadas).toHaveLength(0);

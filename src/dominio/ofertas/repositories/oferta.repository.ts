@@ -12,7 +12,15 @@ const RELACIONES = {
   },
   lineas: {
     include: {
-      lote: { select: { id: true, descripcion: true, unidad: true, cantidadRequerida: true } },
+      lote: {
+        select: {
+          id: true,
+          descripcion: true,
+          categoria: true,
+          unidad: true,
+          cantidadRequerida: true,
+        },
+      },
       organizacion: { select: { id: true, nombre: true } },
     },
     orderBy: { loteId: 'asc' },

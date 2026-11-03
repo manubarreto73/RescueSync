@@ -19,6 +19,7 @@ import { PublicarConvocatoriaDto } from '../dtos/request/publicar-convocatoria.d
 import { RegisterEmergenciaDto } from '../dtos/request/register-emergencia.dto';
 import { BonitaProcesoService } from '../../../integracion/bonita/bonita-proceso.service';
 import { LotesService } from '../../lotes/services/lotes.service';
+import { NotificacionesService } from '../../notificaciones/services/notificaciones.service';
 import { EmergenciaRepository } from '../repositories/emergencia.repository';
 
 @Injectable()
@@ -32,6 +33,7 @@ export class EmergenciasService {
     @Inject(forwardRef(() => LotesService))
     private readonly lotesService: LotesService,
     private readonly bonita: BonitaProcesoService,
+    private readonly notificaciones: NotificacionesService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -254,12 +256,16 @@ export class EmergenciasService {
      * REGISTRADA, en vez de abrir una ventana que nadie va a cerrar.
      */
     const caseId = await this.asegurarCaso(emergencia);
-    await this.bonita.publicarConvocatoria(caseId);
+    await this.bonita.publicarConvocatoria(caseId, dto.fechaCierreConvocatoria);
 
-    return this.aplicar(emergencia, 'publicar-convocatoria', {
+    const publicada = await this.aplicar(emergencia, 'publicar-convocatoria', {
       fechaCierreConvocatoria: dto.fechaCierreConvocatoria,
       bonitaCaseId: caseId || undefined,
     });
+
+    await this.notificaciones.notificarConvocatoria(emergencia);
+
+    return publicada;
   }
 
   /**
@@ -284,34 +290,60 @@ export class EmergenciasService {
   ): Promise<EmergenciaResponseDto> {
     const emergencia = await this.transicionar(id, 'reabrir-convocatoria', user);
 
+    if (emergencia.bonitaCaseId) {
+      await this.bonita.registrarDecision(emergencia.bonitaCaseId, 'REABRIR');
+    }
+
     /**
-     * El diagrama no tiene camino de vuelta: al cerrarse la convocatoria el
-     * caso termino. Reabrir es arrancar un caso nuevo y llevarlo hasta
-     * "Cargar / editar ofertas", que vuelve a poner el temporizador en marcha.
-     * El caso anterior queda en el historial de Bonita.
+     * El diagrama no tiene camino de vuelta: con la decision de reabrir el caso
+     * termina. Reabrir es arrancar un caso nuevo y llevarlo hasta "Cargar /
+     * editar ofertas", que vuelve a poner el temporizador en marcha. El caso
+     * anterior queda en el historial de Bonita.
      */
     const caseId = await this.bonita.iniciarCaso(emergencia.id);
-    if (caseId) await this.bonita.publicarConvocatoria(caseId);
+    if (caseId) await this.bonita.publicarConvocatoria(caseId, dto.fechaCierreConvocatoria);
 
-    return this.aplicar(emergencia, 'reabrir-convocatoria', {
+    const reabierta = await this.aplicar(emergencia, 'reabrir-convocatoria', {
       fechaCierreConvocatoria: dto.fechaCierreConvocatoria,
       bonitaCaseId: caseId ?? undefined,
     });
+
+    await this.notificaciones.notificarConvocatoria(emergencia);
+
+    return reabierta;
   }
 
   async habilitarAdjudicacion(id: number, user: AuthenticatedUser): Promise<EmergenciaResponseDto> {
     const emergencia = await this.transicionar(id, 'habilitar-adjudicacion', user);
+
+    if (emergencia.bonitaCaseId) {
+      await this.bonita.registrarDecision(emergencia.bonitaCaseId, 'CONTINUAR');
+    }
+
     return this.aplicar(emergencia, 'habilitar-adjudicacion');
   }
 
   async adjudicar(id: number, user: AuthenticatedUser): Promise<EmergenciaResponseDto> {
     const emergencia = await this.transicionar(id, 'adjudicar', user);
     this.exigirPropiedad(emergencia, user);
+
+    // Si el motor falla no se avanza (503): sin esta tarea Bonita no compromete
+    // los recursos y la emergencia quedaria en ejecucion sin nada bloqueado.
+    if (emergencia.bonitaCaseId) {
+      await this.bonita.adjudicar(emergencia.bonitaCaseId);
+    }
+
     return this.aplicar(emergencia, 'adjudicar');
   }
 
   async finalizar(id: number, user: AuthenticatedUser): Promise<EmergenciaResponseDto> {
     const emergencia = await this.transicionar(id, 'finalizar', user);
+
+    // Igual que al adjudicar: sin esta tarea Bonita no libera los recursos.
+    if (emergencia.bonitaCaseId) {
+      await this.bonita.finalizarProyecto(emergencia.bonitaCaseId);
+    }
+
     return this.aplicar(emergencia, 'finalizar');
   }
 

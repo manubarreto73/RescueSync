@@ -1,5 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BonitaTareaArchivada } from './tiempos-por-etapa';
 
 /** Proceso desplegado, tal como lo devuelve /API/bpm/process. */
 export interface BonitaProceso {
@@ -156,6 +157,15 @@ export class BonitaClient {
     await this.request(actor, 'POST', `/API/bpm/userTask/${tareaId}/execution`, {
       query: { assign: 'true' },
       body: contrato,
+    });
+  }
+
+  /** Tareas humanas ya terminadas, para los indicadores. */
+  listarTareasArchivadas(actor: ActorBonita): Promise<BonitaTareaArchivada[]> {
+    return this.get<BonitaTareaArchivada[]>(actor, '/API/bpm/archivedHumanTask', {
+      p: '0',
+      c: '1000',
+      o: 'archivedDate DESC',
     });
   }
 

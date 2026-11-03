@@ -13,7 +13,14 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
@@ -52,6 +59,19 @@ export class OrganizacionesController {
   @Get()
   @Roles(Rol.CENTRO_COORDINADOR, Rol.AUDITOR, Rol.REPRESENTANTE_ONG)
   @ApiOperation({ summary: 'Lista las organizaciones de la red' })
+  @ApiExtraModels(OrganizacionResponseDto)
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        content: { type: 'array', items: { $ref: getSchemaPath(OrganizacionResponseDto) } },
+        page: { type: 'number' },
+        size: { type: 'number' },
+        totalElements: { type: 'number' },
+        totalPages: { type: 'number' },
+      },
+    },
+  })
   getAll(@Query() query: FindOrganizacionesQuery): Promise<PageResponse<OrganizacionResponseDto>> {
     return this.organizacionesService.getAll(query);
   }

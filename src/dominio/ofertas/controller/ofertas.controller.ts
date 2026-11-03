@@ -10,13 +10,20 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
 import { Rol } from '../../../common/enums/rol.enum';
 import { AuthenticatedUser } from '../../../security/interfaces/jwt-payload.interface';
-import { OfertaResponseDto } from '../dtos/oferta-response.dto';
+import { OfertaResponseDto, OfertaVersionResponseDto } from '../dtos/oferta-response.dto';
 import { ChangeOfertaDto } from '../dtos/request/change-oferta.dto';
 import { FindOfertasQuery } from '../dtos/request/find-ofertas.query';
 import { RechazarOfertaDto } from '../dtos/request/rechazar-oferta.dto';
@@ -47,6 +54,19 @@ export class OfertasController {
    */
   @Get()
   @ApiOperation({ summary: 'Lista ofertas segun el alcance del perfil' })
+  @ApiExtraModels(OfertaResponseDto)
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        content: { type: 'array', items: { $ref: getSchemaPath(OfertaResponseDto) } },
+        page: { type: 'number' },
+        size: { type: 'number' },
+        totalElements: { type: 'number' },
+        totalPages: { type: 'number' },
+      },
+    },
+  })
   getAll(
     @Query() query: FindOfertasQuery,
     @CurrentUser() user: AuthenticatedUser,
@@ -56,6 +76,7 @@ export class OfertasController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Obtiene una oferta por id' })
+  @ApiResponse({ status: 200, type: OfertaResponseDto })
   getById(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: AuthenticatedUser,
@@ -66,6 +87,7 @@ export class OfertasController {
   /** La trazabilidad de ediciones que pide la consigna. */
   @Get(':id/versiones')
   @ApiOperation({ summary: 'Historial de modificaciones de la oferta' })
+  @ApiResponse({ status: 200, type: [OfertaVersionResponseDto] })
   getVersiones(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthenticatedUser) {
     return this.ofertasService.getVersiones(id, user);
   }

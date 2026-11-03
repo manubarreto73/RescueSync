@@ -1,5 +1,11 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { EstadoEmergencia, EstadoOferta, Prisma, TipoOrganizacion } from '@prisma/client';
+import {
+  CategoriaRecurso,
+  EstadoEmergencia,
+  EstadoOferta,
+  Prisma,
+  TipoOrganizacion,
+} from '@prisma/client';
 import { PageResponse } from '../../../common/dtos/page-response.dto';
 import { Rol, esAdmin } from '../../../common/enums/rol.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
@@ -8,7 +14,9 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { PrismaTransaction } from '../../../prisma/transaction.types';
 import { AuthenticatedUser } from '../../../security/interfaces/jwt-payload.interface';
 import { EmergenciasService } from '../../emergencias/services/emergencias.service';
+import { NotificacionesService } from '../../notificaciones/services/notificaciones.service';
 import { OrganizacionesService } from '../../organizaciones/services/organizaciones.service';
+import { CompromisosResponseDto } from '../dtos/compromisos-response.dto';
 import { OfertaConRelaciones, OfertaResponseDto } from '../dtos/oferta-response.dto';
 import { ChangeOfertaDto } from '../dtos/request/change-oferta.dto';
 import { FindOfertasQuery } from '../dtos/request/find-ofertas.query';
@@ -34,6 +42,7 @@ export class OfertasService {
     private readonly ofertaRepository: OfertaRepository,
     private readonly emergenciasService: EmergenciasService,
     private readonly organizacionesService: OrganizacionesService,
+    private readonly notificaciones: NotificacionesService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -166,6 +175,9 @@ export class OfertasService {
 
     return {
       emergenciaId: emergencia.id,
+      // gravedad y categoria son los datos que pide POST /validaciones del
+      // Sistema Nacional, ademas del codigo de la ONG y la cantidad.
+      gravedad: emergencia.gravedad,
       estadoEmergencia: emergencia.estado,
       fechaCierreConvocatoria: emergencia.fechaCierreConvocatoria,
       totalOfertas: ofertas.length,
@@ -184,6 +196,7 @@ export class OfertasService {
           lineaId: l.id,
           loteId: l.loteId,
           loteDescripcion: l.lote.descripcion,
+          categoria: l.lote.categoria,
           organizacionId: l.organizacionId,
           codigoNacional:
             o.participantes.find((p) => p.organizacionId === l.organizacionId)?.organizacion
@@ -192,6 +205,61 @@ export class OfertasService {
           unidad: l.lote.unidad,
           cantidadRequeridaDelLote: l.lote.cantidadRequerida,
         })),
+      })),
+    };
+  }
+
+  /**
+   * Lo que Bonita le manda al Sistema Nacional tras la adjudicacion: una entrada
+   * por ONG, sumando lo que aporta en cada categoria.
+   *
+   * Se suma aca porque el Sistema Nacional guarda un stock por categoria y un
+   * compromiso por ONG, y una misma ONG puede aportar a varios lotes o estar en
+   * varias ofertas. Incluye las ya finalizadas para que un reintento lea lo mismo.
+   */
+  async compromisosParaBonita(
+    emergenciaId: number,
+    user: AuthenticatedUser,
+  ): Promise<CompromisosResponseDto> {
+    const emergencia = await this.emergenciasService.findVisible(emergenciaId, user);
+
+    const ofertas = await this.ofertaRepository.findPorEmergencia(emergenciaId, [
+      EstadoOferta.ADJUDICADA,
+      EstadoOferta.FINALIZADA,
+    ]);
+
+    if (ofertas.length === 0) {
+      throw new BusinessException(`La emergencia ${emergenciaId} no tiene ofertas adjudicadas`);
+    }
+
+    const porOng = new Map<string, Map<CategoriaRecurso, number>>();
+
+    for (const oferta of ofertas) {
+      for (const linea of oferta.lineas) {
+        const organizacion = oferta.participantes.find(
+          (p) => p.organizacionId === linea.organizacionId,
+        )?.organizacion;
+
+        if (!organizacion?.codigoNacional) {
+          // Sin codigo el Sistema Nacional no sabe a quien bloquearle el recurso.
+          throw new BusinessException(
+            `La organizacion ${linea.organizacionId} no tiene codigo nacional: ` +
+              'no se pueden comprometer sus recursos',
+          );
+        }
+
+        const items = porOng.get(organizacion.codigoNacional) ?? new Map<CategoriaRecurso, number>();
+        const categoria = linea.lote.categoria;
+        items.set(categoria, (items.get(categoria) ?? 0) + linea.cantidad);
+        porOng.set(organizacion.codigoNacional, items);
+      }
+    }
+
+    return {
+      gravedad: emergencia.gravedad,
+      compromisos: [...porOng].map(([codigoNacional, items]) => ({
+        codigoNacional,
+        items: [...items].map(([categoria, cantidad]) => ({ categoria, cantidad })),
       })),
     };
   }
@@ -418,12 +486,14 @@ export class OfertasService {
       );
     }
 
-    return OfertaResponseDto.from(
-      await this.ofertaRepository.update(id, {
-        estado: EstadoOferta.ADJUDICADA,
-        fechaAdjudicacion: new Date(),
-      }),
-    );
+    const adjudicada = await this.ofertaRepository.update(id, {
+      estado: EstadoOferta.ADJUDICADA,
+      fechaAdjudicacion: new Date(),
+    });
+
+    await this.notificaciones.notificarResultadoOferta(adjudicada, true);
+
+    return OfertaResponseDto.from(adjudicada);
   }
 
   async rechazar(
@@ -440,12 +510,14 @@ export class OfertasService {
       throw new ForbiddenException('La emergencia pertenece a otro municipio');
     }
 
-    return OfertaResponseDto.from(
-      await this.ofertaRepository.update(id, {
-        estado: EstadoOferta.NO_ADJUDICADA,
-        motivoNoAdjudicacion: dto.motivo,
-      }),
-    );
+    const rechazada = await this.ofertaRepository.update(id, {
+      estado: EstadoOferta.NO_ADJUDICADA,
+      motivoNoAdjudicacion: dto.motivo,
+    });
+
+    await this.notificaciones.notificarResultadoOferta(rechazada, false);
+
+    return OfertaResponseDto.from(rechazada);
   }
 
   /**
@@ -611,8 +683,11 @@ export class OfertasService {
         })),
         lineas: oferta.lineas.map((l) => ({
           loteId: l.loteId,
+          loteDescripcion: l.lote.descripcion,
           organizacionId: l.organizacionId,
+          organizacionNombre: l.organizacion.nombre,
           cantidad: l.cantidad,
+          unidad: l.lote.unidad,
         })),
       },
       usuarioId,

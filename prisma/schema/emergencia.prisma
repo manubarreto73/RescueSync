@@ -49,6 +49,8 @@ model Emergencia {
   lotes   Lote[]
   ofertas Oferta[]
 
+  notificaciones Notificacion[]
+
   fechaCreacion      DateTime @default(now()) @map("fecha_creacion")
   fechaActualizacion DateTime @updatedAt @map("fecha_actualizacion")
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ActorBonita, BonitaClient, BonitaException, BonitaTarea } from './bonita.client';
+import { TiempoEtapa, calcularTiemposPorEtapa } from './tiempos-por-etapa';
 
 /**
  * Nombres de las tareas humanas tal como estan en el diagrama. Si alguien las
@@ -10,7 +11,11 @@ import { ActorBonita, BonitaClient, BonitaException, BonitaTarea } from './bonit
 export const TAREAS = {
   /** Lane "Municipio afectado". Contrato: { id: Integer } con el id de la emergencia. */
   REGISTRAR_EMERGENCIA: { nombre: 'Registrar emergencia', actor: 'municipio' },
-  /** Lane "Centro Coordinador Regional". Sin contrato. */
+  /**
+   * Lane "Centro Coordinador Regional". Contrato: { fechaCierre: String } en
+   * ISO 8601 con la fecha que eligio el Coordinador. El temporizador de la
+   * tarea siguiente vence en esa fecha.
+   */
   GENERAR_LOTES: { nombre: 'Generar lotes', actor: 'coordinador' },
   /**
    * Lane "Representante de ONG". Tiene el temporizador de borde: si vence
@@ -18,9 +23,27 @@ export const TAREAS = {
    * a POST /emergencias/:id/cerrar-convocatoria.
    */
   CARGAR_OFERTAS: { nombre: 'Cargar / editar ofertas', actor: 'ong' },
+  /**
+   * Lane "Centro Coordinador Regional". Camino alternativo del temporizador: la
+   * tarea existe solo si lo ofertado no cubrió los lotes. Contrato:
+   * { decision: String } con REABRIR o CONTINUAR.
+   */
+  DECIDIR_CURSO: { nombre: 'Decidir curso de accion', actor: 'coordinador' },
+  /**
+   * Lane "Municipio afectado". Sin contrato. Al completarse, Bonita pide
+   * GET .../ofertas/compromisos y bloquea los recursos en el Sistema Nacional.
+   */
+  ADJUDICAR_OFERTAS: { nombre: 'Adjudicar ofertas', actor: 'municipio' },
+  /**
+   * Lane "Centro Coordinador Regional". Sin contrato. Al completarse, Bonita
+   * libera los recursos en el Sistema Nacional.
+   */
+  CIERRE_PROYECTO: { nombre: 'Cierre del proyecto', actor: 'coordinador' },
 } as const satisfies Record<string, { nombre: string; actor: ActorBonita }>;
 
 type Tarea = (typeof TAREAS)[keyof typeof TAREAS];
+
+export type DecisionCoordinador = 'REABRIR' | 'CONTINUAR';
 
 /**
  * El Operador municipal es el actor iniciador del proceso: instancia los
@@ -91,13 +114,33 @@ export class BonitaProcesoService {
   /**
    * El Coordinador termino el desglose y publica: se completa "Generar
    * lotes", y el caso queda en "Cargar / editar ofertas" con el temporizador
-   * corriendo.
+   * corriendo hasta la fecha de cierre.
    */
-  async publicarConvocatoria(caseId: string): Promise<void> {
+  async publicarConvocatoria(caseId: string, fechaCierre: Date): Promise<void> {
     if (!this.habilitado) return;
 
-    await this.ejecutar(caseId, TAREAS.GENERAR_LOTES);
+    await this.ejecutar(caseId, TAREAS.GENERAR_LOTES, { fechaCierre: fechaCierre.toISOString() });
     this.logger.log(`Caso ${caseId}: convocatoria abierta, temporizador en marcha`);
+  }
+
+  /**
+   * El municipio confirmo la adjudicacion. A diferencia de la decision del
+   * Coordinador, la tarea tiene que existir: si no se completa, los recursos no
+   * se comprometen, y eso no puede pasar en silencio.
+   */
+  async adjudicar(caseId: string): Promise<void> {
+    if (!this.habilitado) return;
+
+    await this.ejecutar(caseId, TAREAS.ADJUDICAR_OFERTAS);
+    this.logger.log(`Caso ${caseId}: adjudicacion confirmada`);
+  }
+
+  /** Cierre operativo. Igual que al adjudicar: sin la tarea no se liberan los recursos. */
+  async finalizarProyecto(caseId: string): Promise<void> {
+    if (!this.habilitado) return;
+
+    await this.ejecutar(caseId, TAREAS.CIERRE_PROYECTO);
+    this.logger.log(`Caso ${caseId}: proyecto cerrado`);
   }
 
   /**
@@ -125,6 +168,25 @@ export class BonitaProcesoService {
   }
 
   /**
+   * Le pasa al motor lo que eligió el Coordinador en la aplicación.
+   *
+   * La tarea no siempre está pendiente: con cobertura completa el proceso no
+   * pasa por ella, y un reintento encuentra que ya se completó. En esos casos
+   * no hay nada que hacer. Por eso no se espera a que aparezca.
+   */
+  async registrarDecision(caseId: string, decision: DecisionCoordinador): Promise<void> {
+    if (!this.habilitado) return;
+
+    const { nombre, actor } = TAREAS.DECIDIR_CURSO;
+    const tarea = await this.client.buscarTareaPendiente(actor, caseId, nombre);
+
+    if (!tarea) return;
+
+    await this.client.ejecutarTarea(actor, tarea.id, { decision });
+    this.logger.log(`Caso ${caseId}: el Coordinador decidio ${decision}`);
+  }
+
+  /**
    * Una emergencia cancelada no tiene que seguir viva en el motor: con la
    * convocatoria abierta, el temporizador venceria y llamaria a la API sobre
    * una emergencia que ya no existe para el proceso.
@@ -134,6 +196,24 @@ export class BonitaProcesoService {
 
     await this.borrarCaso(caseId);
     this.logger.log(`Caso ${caseId}: eliminado de Bonita por cancelacion`);
+  }
+
+  /**
+   * Tiempo promedio de cada etapa del proceso, para el tablero. Devuelve null
+   * con la integracion apagada o el motor inaccesible: los indicadores de la
+   * base local se siguen pudiendo mostrar.
+   */
+  async tiemposPorEtapa(): Promise<TiempoEtapa[] | null> {
+    if (!this.habilitado) return null;
+
+    try {
+      const nombres: string[] = Object.values(TAREAS).map((t) => t.nombre);
+      const tareas = await this.client.listarTareasArchivadas(INICIADOR);
+      return calcularTiemposPorEtapa(tareas.filter((t) => nombres.includes(t.name)));
+    } catch (error) {
+      this.logger.warn(`No se pudieron leer los tiempos de Bonita: ${String(error)}`);
+      return null;
+    }
   }
 
   // ------------------------------------------------------------------
