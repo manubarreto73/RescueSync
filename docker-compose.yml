@@ -61,6 +61,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-rescuesync}:${POSTGRES_PASSWORD:-rescuesync}@postgres:5432/${POSTGRES_DB:-rescuesync}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Bonita corre en otro compose: desde este contenedor se llega por el host.
+      BONITA_URL: http://host.docker.internal:8080/bonita
     # Bonita corre en el host (Studio), no en esta red: host.docker.internal
     # apunta al host desde el contenedor. Usar BONITA_URL=http://host.docker.internal:8080/bonita
     extra_hosts:
@@ -80,8 +82,8 @@ services:
       # Bind mount del codigo para el hot-reload. Al vivir el proyecto en
       # /mnt/c, estas rutas cruzan el puente 9p: anda, pero es lento y sin
       # eventos inotify (de ahi el polling del watcher, ver command).
-      - ./src:/app/src
-      - ./prisma:/app/prisma
+      - ./src:/app/src:z
+      - ./prisma:/app/prisma:z
       # Volumen anonimo para que node_modules del contenedor (con el cliente
       # de Prisma compilado para linux-musl) no sea pisado por el del host.
       - /app/node_modules
