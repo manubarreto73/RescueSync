@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CategoriaRecurso, EstadoEmergencia } from '@prisma/client';
 import { BonitaProcesoService } from '../../integracion/bonita/bonita-proceso.service';
-import { IndicadoresResponseDto, SuministroDto } from './dtos/indicadores.dto';
+import { CoberturaDto, IndicadoresResponseDto, SuministroDto } from './dtos/indicadores.dto';
 import { IndicadoresRepository } from './indicadores.repository';
 
 /** Combina los datos propios con los que se leen de la API de Bonita. */
@@ -15,9 +15,10 @@ export class IndicadoresService {
   async obtener(mes?: string): Promise<IndicadoresResponseDto> {
     const periodo = mes ?? new Date().toISOString().slice(0, 7);
 
-    const [suministrosMovilizados, consorcios, proyectos, etapas] = await Promise.all([
+    const [suministrosMovilizados, consorcios, cobertura, proyectos, etapas] = await Promise.all([
       this.suministros(periodo),
       this.consorcios(),
+      this.cobertura(),
       this.proyectos(),
       this.bonita.tiemposPorEtapa(),
     ]);
@@ -26,6 +27,7 @@ export class IndicadoresService {
       mes: periodo,
       suministrosMovilizados,
       consorcios,
+      cobertura,
       proyectos,
       tiemposPorEtapa: { disponible: etapas !== null, etapas: etapas ?? [] },
     };
@@ -65,14 +67,72 @@ export class IndicadoresService {
     };
   }
 
+  /**
+   * Cuanto de lo requerido cubrio lo adjudicado, en las emergencias que ya
+   * pasaron la adjudicacion. Cada lote aporta su porcentaje (tope 100: lo que
+   * sobra en un lote no compensa lo que falta en otro), y una emergencia tiene
+   * cobertura total solo si todos sus lotes estan cubiertos. Las parciales son
+   * las que el Coordinador decidio continuar sin completar los lotes.
+   */
+  private async cobertura(): Promise<CoberturaDto> {
+    const lotes = await this.indicadoresRepository.lotesAdjudicados();
+
+    const coberturaDe = (lote: (typeof lotes)[number]) => {
+      const adjudicado = lote.lineasDeOferta.reduce((suma, l) => suma + l.cantidad, 0);
+      return Math.min(1, adjudicado / lote.cantidadRequerida);
+    };
+
+    const completaPorEmergencia = new Map<number, boolean>();
+    const porCategoria = new Map<CategoriaRecurso, { lotes: number; suma: number }>();
+    let sumaTotal = 0;
+    let lotesCubiertos = 0;
+
+    for (const lote of lotes) {
+      const cobertura = coberturaDe(lote);
+      const cubierto = cobertura === 1;
+
+      sumaTotal += cobertura;
+      if (cubierto) lotesCubiertos++;
+
+      completaPorEmergencia.set(
+        lote.emergenciaId,
+        (completaPorEmergencia.get(lote.emergenciaId) ?? true) && cubierto,
+      );
+
+      const categoria = porCategoria.get(lote.categoria) ?? { lotes: 0, suma: 0 };
+      categoria.lotes++;
+      categoria.suma += cobertura;
+      porCategoria.set(lote.categoria, categoria);
+    }
+
+    const porcentaje = (suma: number, cantidad: number) =>
+      cantidad ? Math.round((suma / cantidad) * 1000) / 10 : 0;
+    const completas = [...completaPorEmergencia.values()].filter(Boolean).length;
+
+    return {
+      emergencias: completaPorEmergencia.size,
+      conCoberturaTotal: completas,
+      conCoberturaParcial: completaPorEmergencia.size - completas,
+      totalLotes: lotes.length,
+      lotesCubiertos,
+      porcentaje: porcentaje(sumaTotal, lotes.length),
+      porCategoria: [...porCategoria.entries()]
+        .map(([categoria, { lotes, suma }]) => ({
+          categoria,
+          lotes,
+          porcentaje: porcentaje(suma, lotes),
+        }))
+        .sort((a, b) => a.porcentaje - b.porcentaje),
+    };
+  }
+
   private async proyectos() {
     const filas = await this.indicadoresRepository.emergenciasPorEstado();
     const porEstado = filas.map((f) => ({ estado: f.estado, cantidad: f._count._all }));
 
     return {
       total: porEstado.reduce((suma, f) => suma + f.cantidad, 0),
-      finalizados:
-        porEstado.find((f) => f.estado === EstadoEmergencia.FINALIZADA)?.cantidad ?? 0,
+      finalizados: porEstado.find((f) => f.estado === EstadoEmergencia.FINALIZADA)?.cantidad ?? 0,
       porEstado,
     };
   }

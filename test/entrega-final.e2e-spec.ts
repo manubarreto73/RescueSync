@@ -419,6 +419,16 @@ describe('Notificaciones, inventario e indicadores (e2e)', () => {
         mes,
         suministrosMovilizados: [{ categoria: 'PERSONAL', unidad: 'personas', cantidad: 3 }],
         consorcios: { ofertasAdjudicadas: 1, enConsorcio: 1, porcentaje: 100 },
+        // Todavia no se adjudico la emergencia entera: no entra en la cobertura.
+        cobertura: {
+          emergencias: 0,
+          conCoberturaTotal: 0,
+          conCoberturaParcial: 0,
+          totalLotes: 0,
+          lotesCubiertos: 0,
+          porcentaje: 0,
+          porCategoria: [],
+        },
         proyectos: {
           total: 1,
           finalizados: 0,
@@ -426,6 +436,35 @@ describe('Notificaciones, inventario e indicadores (e2e)', () => {
         },
         // Con Bonita apagado el tablero sigue funcionando sin los tiempos.
         tiemposPorEtapa: { disponible: false, etapas: [] },
+      });
+    });
+
+    it('la cobertura compara lo adjudicado con lo requerido en las emergencias en ejecucion', async () => {
+      const oferta = await sembrarOfertaValidada();
+
+      await http()
+        .post(`${BASE}/ofertas/${oferta.id}/adjudicar`)
+        .set('Authorization', comoUsuario(tokenMunicipio))
+        .expect(200);
+      await ctx.prisma.emergencia.update({
+        where: { id: oferta.emergenciaId },
+        data: { estado: 'EN_EJECUCION' },
+      });
+
+      const res = await http()
+        .get(`${BASE}/indicadores`)
+        .set('Authorization', comoUsuario(tokenAuditor))
+        .expect(200);
+
+      // Se adjudicaron 3 de los 5 paramedicos: siguio con cobertura parcial.
+      expect(res.body.cobertura).toEqual({
+        emergencias: 1,
+        conCoberturaTotal: 0,
+        conCoberturaParcial: 1,
+        totalLotes: 1,
+        lotesCubiertos: 0,
+        porcentaje: 60,
+        porCategoria: [{ categoria: 'PERSONAL', lotes: 1, porcentaje: 60 }],
       });
     });
 

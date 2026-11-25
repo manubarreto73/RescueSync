@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoOferta } from '@prisma/client';
+import { EstadoEmergencia, EstadoOferta } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const ADJUDICADAS: EstadoOferta[] = [EstadoOferta.ADJUDICADA, EstadoOferta.FINALIZADA];
@@ -22,6 +22,29 @@ export class IndicadoresRepository {
     return this.prisma.oferta.findMany({
       where: { estado: { in: ADJUDICADAS } },
       select: { _count: { select: { participantes: true } } },
+    });
+  }
+
+  /**
+   * Lotes de las emergencias que ya pasaron por la adjudicacion, con lo que
+   * aporta cada linea de las ofertas adjudicadas.
+   */
+  lotesAdjudicados() {
+    return this.prisma.lote.findMany({
+      where: {
+        emergencia: {
+          estado: { in: [EstadoEmergencia.EN_EJECUCION, EstadoEmergencia.FINALIZADA] },
+        },
+      },
+      select: {
+        emergenciaId: true,
+        categoria: true,
+        cantidadRequerida: true,
+        lineasDeOferta: {
+          where: { oferta: { estado: { in: ADJUDICADAS } } },
+          select: { cantidad: true },
+        },
+      },
     });
   }
 
